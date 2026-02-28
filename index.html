@@ -7,34 +7,43 @@
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="min-h-screen flex flex-col items-center bg-gray-50">
-  <main class="flex flex-col items-center gap-6 w-full max-w-2xl px-4 pt-8 pb-8">
-    <!-- Version dropdown -->
-    <div class="w-full max-w-xs">
-      <label for="version" class="block text-sm font-medium text-gray-700 mb-1">Pinchord version</label>
-      <select
-        id="version"
-        name="version"
-        class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
-      >
-        <option value="v16.6">v16.6</option>
-        <option value="v17.0">v17.0</option>
-        <option value="v17.1">v17.1</option>
-        <option value="v17.2">v17.2</option>
-        <option value="v18.0">v18.0</option>
-        <option value="v19.0">v19.0</option>
-        <option value="v20.0">v20.0</option>
-        <option value="v21.0">v21.0</option>
-        <option value="v21.1">v21.1</option>
-        <option value="v22.0">v22.0</option>
-        <option value="v22.1">v22.1</option>
-        <option value="v23.0">v23.0</option>
-        <option value="v24.0">v24.0</option>
-        <option value="v24.1">v24.1</option>
-        <option value="v25.0">v25.0</option>
-        <option value="v26.0" selected>v26.0</option>
-      </select>
+  <!-- Tab bar -->
+  <header class="w-full border-b border-gray-200 bg-white shadow-sm">
+    <div class="flex items-center justify-between max-w-2xl mx-auto px-4">
+      <nav class="flex" aria-label="Main">
+        <a href="#lookup" id="tab-lookup" class="tab px-5 py-3.5 text-sm font-medium border-b-2 -mb-px rounded-t-lg transition-colors border-indigo-500 text-indigo-600" aria-current="page">Lookup</a>
+        <a href="#chords" id="tab-chords" class="tab px-5 py-3.5 text-sm font-medium border-b-2 border-transparent -mb-px text-gray-600 hover:text-gray-900 hover:border-gray-300 rounded-t-lg transition-colors">Chords</a>
+      </nav>
+      <div class="flex items-center gap-2 py-2">
+        <label for="version" class="text-sm text-gray-600 whitespace-nowrap">Version</label>
+        <select
+          id="version"
+          name="version"
+          class="rounded-lg border border-gray-300 bg-white px-2.5 py-1.5 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        >
+          <option value="v16.6">v16.6</option>
+          <option value="v17.0">v17.0</option>
+          <option value="v17.1">v17.1</option>
+          <option value="v17.2">v17.2</option>
+          <option value="v18.0">v18.0</option>
+          <option value="v19.0">v19.0</option>
+          <option value="v20.0">v20.0</option>
+          <option value="v21.0">v21.0</option>
+          <option value="v21.1">v21.1</option>
+          <option value="v22.0">v22.0</option>
+          <option value="v22.1">v22.1</option>
+          <option value="v23.0">v23.0</option>
+          <option value="v24.0">v24.0</option>
+          <option value="v24.1">v24.1</option>
+          <option value="v25.0">v25.0</option>
+          <option value="v26.0" selected>v26.0</option>
+        </select>
+      </div>
     </div>
+  </header>
 
+  <!-- Lookup panel -->
+  <main id="panel-lookup" class="tab-panel flex flex-col items-center gap-6 w-full max-w-2xl px-4 pt-8 pb-8">
     <!-- Layout visual -->
     <div
       id="layout-visual"
@@ -81,6 +90,66 @@
       </div>
     </div>
   </main>
+
+  <!-- Chords panel -->
+  <main id="panel-chords" class="tab-panel hidden flex flex-col min-h-0 w-full max-w-2xl px-4 pt-8 pb-8 max-h-[calc(100vh-5rem)]">
+    <p id="chords-status" class="text-gray-500 shrink-0">Loading…</p>
+    <div id="chords-search" class="shrink-0 flex flex-wrap items-center gap-4 mb-3 hidden">
+      <input
+        type="text"
+        id="chords-search-input"
+        placeholder="Search…"
+        class="flex-1 min-w-[8rem] rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+        aria-label="Search chords"
+      />
+      <fieldset class="flex items-center gap-3 border-0 p-0" aria-label="Search in">
+        <label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+          <input type="radio" name="chords-search-by" value="stroke" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500" />
+          Strokes
+        </label>
+        <label class="flex items-center gap-1.5 text-sm text-gray-700 cursor-pointer">
+          <input type="radio" name="chords-search-by" value="outline" class="rounded-full border-gray-300 text-indigo-600 focus:ring-indigo-500" checked />
+          Outlines
+        </label>
+      </fieldset>
+    </div>
+    <div id="chords-tables" class="w-full grid grid-cols-3 gap-4 flex-1 min-h-0 hidden">
+      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="initials">
+        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Initials</h2>
+        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
+          <table class="w-full text-sm min-w-max">
+            <thead class="bg-gray-100 sticky top-0">
+              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Outline</th></tr>
+            </thead>
+            <tbody id="chords-initials-tbody" class="bg-white"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="vowels">
+        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Vowels</h2>
+        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
+          <table class="w-full text-sm min-w-max">
+            <thead class="bg-gray-100 sticky top-0">
+              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Outline</th></tr>
+            </thead>
+            <tbody id="chords-vowels-tbody" class="bg-white"></tbody>
+          </table>
+        </div>
+      </section>
+      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="finals">
+        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Finals</h2>
+        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
+          <table class="w-full text-sm min-w-max">
+            <thead class="bg-gray-100 sticky top-0">
+              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Outline</th></tr>
+            </thead>
+            <tbody id="chords-finals-tbody" class="bg-white"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
   <script type="module" src="dist/main.js"></script>
 </body>
 </html>

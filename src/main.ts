@@ -11,21 +11,43 @@ const outputCountEl = document.getElementById("chord-output-count")!;
 const URL_PARAM_VERSION = "version";
 const URL_PARAM_TEXT = "text";
 const URL_PARAM_MAX = "max";
+const URL_PARAM_TAB = "tab";
+const URL_PARAM_SEARCH = "search";
 
 const DEFAULT_VERSION = "v26.0";
 const DEFAULT_MAX = "100";
 
-function getUrlParams(): { version?: string; text?: string; max?: string } {
+function getUrlParams(): {
+  version?: string;
+  text?: string;
+  max?: string;
+  tab?: string;
+  search?: string;
+} {
   const params = new URLSearchParams(window.location.search);
   return {
     version: params.get(URL_PARAM_VERSION) ?? undefined,
     text: params.get(URL_PARAM_TEXT) ?? undefined,
     max: params.get(URL_PARAM_MAX) ?? undefined,
+    tab: params.get(URL_PARAM_TAB) ?? undefined,
+    search: params.get(URL_PARAM_SEARCH) ?? undefined,
   };
 }
 
+function getTabFromHash(): "lookup" | "chords" {
+  const hash = window.location.hash.slice(1).toLowerCase();
+  return hash === "chords" ? "chords" : "lookup";
+}
+
 function applyUrlParams(): void {
-  const { version, text, max } = getUrlParams();
+  const { version, text, max, tab, search } = getUrlParams();
+  if (tab === "chords") {
+    window.location.hash = "chords";
+    if (chordsSearchInput) {
+      chordsSearchInput.value = search ?? "";
+      chordsSearchQuery = search ?? "";
+    }
+  }
   if (version != null) {
     const option = Array.from(versionEl.options).find((o) => o.value === version);
     if (option) versionEl.value = version;
@@ -41,13 +63,17 @@ function applyUrlParams(): void {
 function syncUrlFromControls(): void {
   const params = new URLSearchParams();
   const version = versionEl.value;
+  const tab = getTabFromHash();
   const text = inputEl.value.trim();
   const max = maxEntriesEl?.value.trim() ?? "";
+  const search = chordsSearchInput?.value.trim() ?? "";
   if (version && version !== DEFAULT_VERSION) params.set(URL_PARAM_VERSION, version);
-  if (text) params.set(URL_PARAM_TEXT, text);
+  params.set(URL_PARAM_TAB, tab);
+  if (tab === "lookup" && text) params.set(URL_PARAM_TEXT, text);
+  if (tab === "chords" && search) params.set(URL_PARAM_SEARCH, search);
   if (max && max !== DEFAULT_MAX) params.set(URL_PARAM_MAX, max);
-  const search = params.toString();
-  const url = search ? `${window.location.pathname}?${search}` : window.location.pathname;
+  const query = params.toString();
+  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
   window.history.replaceState(null, "", url);
 }
 
@@ -266,6 +292,7 @@ versionEl.addEventListener("change", () => {
   syncUrlFromControls();
   requestUpdate();
   updateLayoutLabelsForVersion(versionEl.value);
+  if (getTabFromHash() === "chords") loadAndRenderChords();
 });
 inputEl.addEventListener("input", () => {
   syncUrlFromControls();
@@ -276,7 +303,189 @@ maxEntriesEl?.addEventListener("input", () => {
   requestUpdate();
 });
 
+// Tab navigation
+const tabLookup = document.getElementById("tab-lookup")!;
+const tabChords = document.getElementById("tab-chords")!;
+const panelLookup = document.getElementById("panel-lookup")!;
+const panelChords = document.getElementById("panel-chords")!;
+
+// Chords tab tables
+const chordsStatus = document.getElementById("chords-status")!;
+const chordsSearch = document.getElementById("chords-search")!;
+const chordsSearchInput = document.getElementById("chords-search-input") as HTMLInputElement;
+const chordsTables = document.getElementById("chords-tables")!;
+const chordsInitialsTbody = document.getElementById("chords-initials-tbody")!;
+const chordsVowelsTbody = document.getElementById("chords-vowels-tbody")!;
+const chordsFinalsTbody = document.getElementById("chords-finals-tbody")!;
+
+type ChordsTableId = "initials" | "vowels" | "finals";
+const chordsTbodies: Record<ChordsTableId, HTMLElement> = {
+  initials: chordsInitialsTbody,
+  vowels: chordsVowelsTbody,
+  finals: chordsFinalsTbody,
+};
+
+let chordsTableData: Record<ChordsTableId, Record<string, string>> = {
+  initials: {},
+  vowels: {},
+  finals: {},
+};
+
+let chordsSortState: Record<ChordsTableId, { col: 0 | 1; dir: 1 | -1 }> = {
+  initials: { col: 1, dir: 1 },
+  vowels: { col: 1, dir: 1 },
+  finals: { col: 1, dir: 1 },
+};
+
+let chordsSearchQuery = "";
+let chordsSearchBy: "stroke" | "outline" = "outline";
+
+const CHORDS_COL_LABELS = ["Stroke", "Outline"] as const;
+
+function filterChordsData(data: Record<string, string>, query: string, by: "stroke" | "outline"): Record<string, string> {
+  const q = query.trim().toLowerCase();
+  if (!q) return data;
+  const col = by === "stroke" ? 0 : 1;
+  return Object.fromEntries(
+    Object.entries(data).filter(([stroke, outline]) => {
+      const val = col === 0 ? stroke : outline;
+      return (val ?? "").toLowerCase().includes(q);
+    })
+  );
+}
+
+function fillChordTable(
+  tbody: HTMLElement,
+  data: Record<string, string>,
+  sortCol: 0 | 1 = 0,
+  sortDir: 1 | -1 = 1
+): void {
+  tbody.innerHTML = "";
+  const entries = Object.entries(data);
+  entries.sort((a, b) => {
+    const va = a[sortCol];
+    const vb = b[sortCol];
+    const c = (va || "").localeCompare(vb || "", undefined, { sensitivity: "base", numeric: true });
+    return c * sortDir;
+  });
+  for (const [stroke, outline] of entries) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 last:border-0";
+    tr.innerHTML = `<td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(stroke || "∅")}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(outline)}</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function updateChordsSortIndicators(section: Element, col: 0 | 1, dir: 1 | -1): void {
+  const ths = section.querySelectorAll("thead th");
+  const arrow = dir === 1 ? " ↑" : " ↓";
+  ths.forEach((th, i) => {
+    th.textContent = CHORDS_COL_LABELS[i] + (i === col ? arrow : "");
+  });
+}
+
+function renderChordsTable(tableId: ChordsTableId): void {
+  const data = filterChordsData(chordsTableData[tableId], chordsSearchQuery, chordsSearchBy);
+  const { col, dir } = chordsSortState[tableId];
+  fillChordTable(chordsTbodies[tableId], data, col, dir);
+  const section = chordsTables.querySelector(`[data-chords-table="${tableId}"]`);
+  if (section) updateChordsSortIndicators(section, col, dir);
+}
+
+function renderAllChordsTables(): void {
+  renderChordsTable("initials");
+  renderChordsTable("vowels");
+  renderChordsTable("finals");
+}
+
+function handleChordsThClick(ev: Event): void {
+  const th = (ev.target as HTMLElement).closest("th");
+  if (!th?.classList.contains("chords-th")) return;
+  const section = th.closest("section");
+  const tableId = section?.getAttribute("data-chords-table") as ChordsTableId | null;
+  if (!tableId || !chordsTbodies[tableId]) return;
+  const col = th.cellIndex as 0 | 1;
+  const state = chordsSortState[tableId];
+  const newDir: 1 | -1 = state.col === col ? (state.dir === 1 ? -1 : 1) : 1;
+  chordsSortState[tableId] = { col, dir: newDir };
+  renderChordsTable(tableId);
+}
+
+chordsTables.addEventListener("click", handleChordsThClick);
+
+chordsSearchInput.addEventListener("input", () => {
+  chordsSearchQuery = chordsSearchInput.value;
+  renderAllChordsTables();
+  syncUrlFromControls();
+});
+chordsSearchInput.addEventListener("change", () => {
+  chordsSearchQuery = chordsSearchInput.value;
+  renderAllChordsTables();
+  syncUrlFromControls();
+});
+document.querySelectorAll<HTMLInputElement>('input[name="chords-search-by"]').forEach((radio) => {
+  radio.addEventListener("change", () => {
+    chordsSearchBy = radio.value as "stroke" | "outline";
+    renderAllChordsTables();
+  });
+});
+
+async function loadAndRenderChords(): Promise<void> {
+  const version = versionEl.value;
+  chordsStatus.textContent = "Loading…";
+  chordsStatus.classList.remove("hidden");
+  chordsSearch.classList.add("hidden");
+  chordsTables.classList.add("hidden");
+  try {
+    const res = await fetch(`chord-versions/pinchord-chords-${version}.json`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = (await res.json()) as {
+      initials?: Record<string, string>;
+      vowels?: Record<string, string>;
+      finals?: Record<string, string>;
+    };
+    const rawInitials = data.initials ?? {};
+    chordsTableData = {
+      initials: Object.fromEntries(Object.entries(rawInitials).filter(([k]) => k !== "")),
+      vowels: data.vowels ?? {},
+      finals: data.finals ?? {},
+    };
+    chordsSearch.classList.remove("hidden");
+    chordsTables.classList.remove("hidden");
+    chordsStatus.classList.add("hidden");
+    renderAllChordsTables();
+  } catch (e) {
+    chordsStatus.textContent = "Failed to load chord data.";
+    chordsStatus.classList.remove("hidden");
+    chordsSearch.classList.add("hidden");
+    chordsTables.classList.add("hidden");
+  }
+}
+
+function switchTab(tab: "lookup" | "chords"): void {
+  const isLookup = tab === "lookup";
+  tabLookup.classList.toggle("border-indigo-500", isLookup);
+  tabLookup.classList.toggle("text-indigo-600", isLookup);
+  tabLookup.classList.toggle("border-transparent", !isLookup);
+  tabLookup.classList.toggle("text-gray-600", !isLookup);
+  tabLookup.setAttribute("aria-current", isLookup ? "page" : "false");
+  tabChords.classList.toggle("border-indigo-500", !isLookup);
+  tabChords.classList.toggle("text-indigo-600", !isLookup);
+  tabChords.classList.toggle("border-transparent", isLookup);
+  tabChords.classList.toggle("text-gray-600", isLookup);
+  tabChords.setAttribute("aria-current", !isLookup ? "page" : "false");
+  panelLookup.classList.toggle("hidden", !isLookup);
+  panelChords.classList.toggle("hidden", isLookup);
+  if (tab === "chords") loadAndRenderChords();
+}
+
+window.addEventListener("hashchange", () => {
+  switchTab(getTabFromHash());
+  syncUrlFromControls();
+});
+
 applyUrlParams();
+switchTab(getTabFromHash());
 updateLayoutLabelsForVersion(versionEl.value);
 requestUpdate();
 
