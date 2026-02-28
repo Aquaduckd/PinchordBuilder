@@ -73,8 +73,8 @@ function syncUrlFromControls(): void {
   if (tab === "chords" && search) params.set(URL_PARAM_SEARCH, search);
   if (max && max !== DEFAULT_MAX) params.set(URL_PARAM_MAX, max);
   const query = params.toString();
-  const url = query ? `${window.location.pathname}?${query}` : window.location.pathname;
-  window.history.replaceState(null, "", url);
+  const path = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+  window.history.replaceState(null, "", path + window.location.hash);
 }
 
 const worker = new Worker("dist/chord-worker.js");
