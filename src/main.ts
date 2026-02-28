@@ -129,7 +129,7 @@ function buildRow(display: string, strokes: Stroke[]): string {
       return `<span class="chord-box inline-block rounded border border-gray-300 bg-white px-2 py-0.5 text-sm font-medium text-gray-800 cursor-pointer hover:bg-gray-100" ${attrs}>${escapeHtml(c)}</span>`;
     })
     .join(slash);
-  return `<div class="flex flex-wrap gap-1.5 items-center">${boxes}</div>`;
+  return `<div class="flex flex-wrap gap-1.5 items-center h-[2.25rem] border-b border-gray-200 py-0">${boxes}</div>`;
 }
 
 function buildChunkLines(spellings: string[], ways: Stroke[][]): string {
@@ -340,7 +340,7 @@ let chordsSortState: Record<ChordsTableId, { col: 0 | 1; dir: 1 | -1 }> = {
 let chordsSearchQuery = "";
 let chordsSearchBy: "stroke" | "outline" = "outline";
 
-const CHORDS_COL_LABELS = ["Stroke", "Outline"] as const;
+const CHORDS_COL_LABELS = ["Stroke", "Translation"] as const;
 
 function filterChordsData(data: Record<string, string>, query: string, by: "stroke" | "outline"): Record<string, string> {
   const q = query.trim().toLowerCase();
