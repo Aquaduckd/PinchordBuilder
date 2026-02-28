@@ -8,6 +8,49 @@ const maxEntriesEl = document.getElementById("max-entries") as HTMLInputElement;
 const outputEl = document.getElementById("chord-output")!;
 const outputCountEl = document.getElementById("chord-output-count")!;
 
+const URL_PARAM_VERSION = "version";
+const URL_PARAM_TEXT = "text";
+const URL_PARAM_MAX = "max";
+
+const DEFAULT_VERSION = "v26.0";
+const DEFAULT_MAX = "100";
+
+function getUrlParams(): { version?: string; text?: string; max?: string } {
+  const params = new URLSearchParams(window.location.search);
+  return {
+    version: params.get(URL_PARAM_VERSION) ?? undefined,
+    text: params.get(URL_PARAM_TEXT) ?? undefined,
+    max: params.get(URL_PARAM_MAX) ?? undefined,
+  };
+}
+
+function applyUrlParams(): void {
+  const { version, text, max } = getUrlParams();
+  if (version != null) {
+    const option = Array.from(versionEl.options).find((o) => o.value === version);
+    if (option) versionEl.value = version;
+  }
+  if (text != null) inputEl.value = text;
+  if (max != null) {
+    const n = parseInt(max, 10);
+    if (Number.isInteger(n) && n >= 1) maxEntriesEl.value = String(n);
+    else if (max === "" || max.toLowerCase() === "none") maxEntriesEl.value = "";
+  }
+}
+
+function syncUrlFromControls(): void {
+  const params = new URLSearchParams();
+  const version = versionEl.value;
+  const text = inputEl.value.trim();
+  const max = maxEntriesEl?.value.trim() ?? "";
+  if (version && version !== DEFAULT_VERSION) params.set(URL_PARAM_VERSION, version);
+  if (text) params.set(URL_PARAM_TEXT, text);
+  if (max && max !== DEFAULT_MAX) params.set(URL_PARAM_MAX, max);
+  const search = params.toString();
+  const url = search ? `${window.location.pathname}?${search}` : window.location.pathname;
+  window.history.replaceState(null, "", url);
+}
+
 const worker = new Worker("dist/chord-worker.js");
 
 let requestId = 0;
@@ -220,12 +263,21 @@ outputEl.addEventListener("mouseleave", () => {
 });
 
 versionEl.addEventListener("change", () => {
+  syncUrlFromControls();
   requestUpdate();
   updateLayoutLabelsForVersion(versionEl.value);
 });
-inputEl.addEventListener("input", requestUpdate);
-maxEntriesEl?.addEventListener("input", requestUpdate);
+inputEl.addEventListener("input", () => {
+  syncUrlFromControls();
+  requestUpdate();
+});
+maxEntriesEl?.addEventListener("input", () => {
+  syncUrlFromControls();
+  requestUpdate();
+});
 
+applyUrlParams();
+updateLayoutLabelsForVersion(versionEl.value);
 requestUpdate();
 
 (async function initLayoutVisual(): Promise<void> {
