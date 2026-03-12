@@ -259,25 +259,103 @@ function requestUpdate() {
 
 const CSV_REQUEST_ID = -1;
 const CSV_ROW_BATCH_SIZE = 100;
-let csvTableData: { word: string; chordOutput: string }[] = [];
-let csvRowBuffer: { index: number; word: string; chordOutput: string }[] = [];
+const CSV_COL_LABELS = ["Index", "Word", "Chord output", "Output", "Word length", "Chord count"] as const;
+type CsvSortCol = 0 | 1 | 2 | 3 | 4 | 5;
+let csvSortCol: CsvSortCol = 0;
+let csvSortDir: 1 | -1 = 1;
+
+let csvTableData: { word: string; chordOutput: string; output: string }[] = [];
+let csvRowBuffer: { index: number; word: string; chordOutput: string; output: string }[] = [];
 let csvWordQueue: string[] = [];
 let csvCurrentWord = "";
 let csvTotalWords = 0;
 
+const csvTable = document.getElementById("csv-table")!;
+
+function getCsvChordCount(r: { chordOutput: string }): number {
+  return r.chordOutput ? r.chordOutput.split(" / ").length : 0;
+}
+
+function csvSortCompare(
+  a: { r: typeof csvTableData[0]; i: number },
+  b: { r: typeof csvTableData[0]; i: number },
+  col: CsvSortCol,
+  dir: 1 | -1
+): number {
+  let c: number;
+  switch (col) {
+    case 0:
+      c = a.i - b.i;
+      break;
+    case 1:
+      c = (a.r.word || "").localeCompare(b.r.word || "", undefined, { sensitivity: "base", numeric: true });
+      break;
+    case 2:
+      c = (a.r.chordOutput || "").localeCompare(b.r.chordOutput || "", undefined, { sensitivity: "base", numeric: true });
+      break;
+    case 3:
+      c = (a.r.output || "").localeCompare(b.r.output || "", undefined, { sensitivity: "base", numeric: true });
+      break;
+    case 4:
+      c = a.r.word.length - b.r.word.length;
+      break;
+    case 5:
+      c = getCsvChordCount(a.r) - getCsvChordCount(b.r);
+      break;
+    default:
+      c = 0;
+  }
+  return c * dir;
+}
+
+function renderCsvTableSorted(): void {
+  const withIndex = csvTableData.map((r, i) => ({ r, i: i + 1 }));
+  const sorted = withIndex.sort((a, b) => csvSortCompare(a, b, csvSortCol, csvSortDir));
+  csvTbody.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  sorted.forEach(({ r }, displayIdx) => {
+    const chordCount = getCsvChordCount(r);
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 last:border-0";
+    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${displayIdx + 1}</td><td class="px-3 py-1.5 text-gray-800">${escapeHtml(r.word)}</td><td class="px-3 py-1.5 text-gray-700 font-mono">${escapeHtml(r.chordOutput)}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(r.output)}</td><td class="px-3 py-1.5 text-gray-600">${r.word.length}</td><td class="px-3 py-1.5 text-gray-600">${chordCount}</td>`;
+    frag.appendChild(tr);
+  });
+  csvTbody.appendChild(frag);
+}
+
+function updateCsvSortIndicators(): void {
+  const ths = csvTable.querySelectorAll("thead th");
+  const arrow = csvSortDir === 1 ? " ↑" : " ↓";
+  ths.forEach((th, i) => {
+    th.textContent = CSV_COL_LABELS[i] + (i === csvSortCol ? arrow : "");
+  });
+}
+
 function flushCsvRowBuffer(): void {
   if (csvRowBuffer.length === 0) return;
   const frag = document.createDocumentFragment();
-  for (const { index, word, chordOutput } of csvRowBuffer) {
-    const chordCount = chordOutput ? chordOutput.split(" / ").length : 0;
+  for (const { index, word, chordOutput, output } of csvRowBuffer) {
+    const chordCount = getCsvChordCount({ chordOutput });
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 last:border-0";
-    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${index}</td><td class="px-3 py-1.5 text-gray-800">${escapeHtml(word)}</td><td class="px-3 py-1.5 text-gray-700 font-mono">${escapeHtml(chordOutput)}</td><td class="px-3 py-1.5 text-gray-600">${chordCount}</td>`;
+    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${index}</td><td class="px-3 py-1.5 text-gray-800">${escapeHtml(word)}</td><td class="px-3 py-1.5 text-gray-700 font-mono">${escapeHtml(chordOutput)}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(output)}</td><td class="px-3 py-1.5 text-gray-600">${word.length}</td><td class="px-3 py-1.5 text-gray-600">${chordCount}</td>`;
     frag.appendChild(tr);
   }
   csvTbody.appendChild(frag);
   csvRowBuffer.length = 0;
 }
+
+csvTable.addEventListener("click", (ev: Event) => {
+  const th = (ev.target as HTMLElement).closest("th");
+  if (!th?.classList.contains("csv-th")) return;
+  const col = th.cellIndex as CsvSortCol;
+  const newDir: 1 | -1 = csvSortCol === col ? (csvSortDir === 1 ? -1 : 1) : 1;
+  csvSortCol = col;
+  csvSortDir = newDir;
+  updateCsvSortIndicators();
+  renderCsvTableSorted();
+});
+updateCsvSortIndicators();
 
 function processNextCsvWord(): void {
   if (csvWordQueue.length === 0) {
@@ -320,21 +398,21 @@ function chordOutputWithJoiner(display: string): string {
   return chords.map((c, i) => (i > 0 ? "+" + c : c)).join(" / ");
 }
 
-worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: string[]; ways?: Stroke[][]; total?: number; message?: string }>) => {
+worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: string[]; ways?: Stroke[][]; output?: string; total?: number; message?: string }>) => {
   const { type, id } = e.data;
   if (id === CSV_REQUEST_ID) {
-    const pushRow = (chordOutput: string) => {
-      csvTableData.push({ word: csvCurrentWord, chordOutput });
-      csvRowBuffer.push({ index: csvTableData.length, word: csvCurrentWord, chordOutput });
+    const pushRow = (chordOutput: string, output = "") => {
+      csvTableData.push({ word: csvCurrentWord, chordOutput, output });
+      csvRowBuffer.push({ index: csvTableData.length, word: csvCurrentWord, chordOutput, output });
       if (csvRowBuffer.length >= CSV_ROW_BATCH_SIZE) flushCsvRowBuffer();
       processNextCsvWord();
     };
     if (type === "chunk" && e.data.spellings !== undefined && e.data.spellings.length > 0) {
-      pushRow(chordOutputWithJoiner(e.data.spellings[0]));
+      pushRow(chordOutputWithJoiner(e.data.spellings[0]), e.data.output ?? "");
     } else if (type === "resultDone" && e.data.total === 0) {
-      pushRow("");
+      pushRow("", "");
     } else if (type === "error" && e.data.message !== undefined) {
-      pushRow("");
+      pushRow("", "");
     }
     return;
   }
@@ -613,11 +691,36 @@ function parseCustomJson(): boolean {
 }
 
 // CSV tab
+const csvWordlistEl = document.getElementById("csv-wordlist") as HTMLSelectElement;
 const csvWordsEl = document.getElementById("csv-words") as HTMLTextAreaElement;
 const csvComputeBtn = document.getElementById("csv-compute")!;
 const csvSaveBtn = document.getElementById("csv-save")!;
 const csvStatusEl = document.getElementById("csv-status")!;
 const csvTbody = document.getElementById("csv-tbody")!;
+
+const WORDLISTS_DIR = "wordlists";
+
+csvWordlistEl.addEventListener("change", async () => {
+  const file = csvWordlistEl.value;
+  if (!file) return;
+  csvStatusEl.textContent = `Loading ${file}…`;
+  csvStatusEl.classList.remove("text-red-600");
+  try {
+    const res = await fetch(`${WORDLISTS_DIR}/${file}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const text = await res.text();
+    csvWordsEl.value = text.trim();
+    const count = text.trim().split(/\s+/).filter(Boolean).length;
+    csvStatusEl.textContent = `Loaded ${file}. ${count.toLocaleString()} word(s).`;
+  } catch (e) {
+    csvStatusEl.textContent = `Failed to load ${file}.`;
+    csvStatusEl.classList.add("text-red-600");
+  }
+});
+
+csvWordsEl.addEventListener("input", () => {
+  csvWordlistEl.value = "";
+});
 
 // Chords tab tables
 const chordsStatus = document.getElementById("chords-status")!;
@@ -857,6 +960,9 @@ csvComputeBtn.addEventListener("click", () => {
   csvTableData = [];
   csvRowBuffer = [];
   csvTbody.innerHTML = "";
+  csvSortCol = 0;
+  csvSortDir = 1;
+  updateCsvSortIndicators();
   if (words.length === 0) {
     csvStatusEl.textContent = "Enter words separated by whitespace.";
     return;
@@ -869,10 +975,10 @@ csvComputeBtn.addEventListener("click", () => {
 });
 
 csvSaveBtn.addEventListener("click", () => {
-  const header = "Index,Word,Chord output,Chord count\n";
+  const header = "Index,Word,Chord output,Output,Word length,Chord count\n";
   const rows = csvTableData.map((r, i) => {
-    const count = r.chordOutput ? r.chordOutput.split(" / ").length : 0;
-    return `${i + 1},${escapeCsv(r.word)},${escapeCsv(r.chordOutput)},${count}`;
+    const count = getCsvChordCount(r);
+    return `${i + 1},${escapeCsv(r.word)},${escapeCsv(r.chordOutput)},${escapeCsv(r.output)},${r.word.length},${count}`;
   }).join("\n");
   const csv = header + rows;
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

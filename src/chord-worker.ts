@@ -216,8 +216,8 @@ async function startJob(
     throw new Error("Either version or data must be provided");
   }
   const rev = getRevMaps(cacheKey, chordData);
-  runJob(id, rev, target, maxEntries, (display, ways) => {
-    if (currentJobId === id) self.postMessage({ type: "chunk", id, spellings: display, ways });
+  runJob(id, rev, target, maxEntries, (display, ways, output) => {
+    if (currentJobId === id) self.postMessage({ type: "chunk", id, spellings: display, ways, output });
   });
 }
 
@@ -226,7 +226,7 @@ function runJob(
   rev: RevMaps,
   target: string,
   maxEntries: number | undefined,
-  onChunk: (display: string[], ways: Strokes[][]) => void
+  onChunk: (display: string[], ways: Strokes[][], output?: string) => void
 ): void {
   jobRunning = true;
   (async () => {
@@ -238,7 +238,8 @@ function runJob(
           if (way && way.length > 0) {
             const display = way.map(([, s]) => chordRepr(s)).join(" / ");
             const strokes = way.map(([, s]) => s);
-            onChunk([display], [strokes]);
+            const output = way.map(([seg]) => seg).join(" ");
+            onChunk([display], [strokes], output);
           }
           self.postMessage({ type: "resultDone", id, total: way && way.length > 0 ? 1 : 0 });
         }
