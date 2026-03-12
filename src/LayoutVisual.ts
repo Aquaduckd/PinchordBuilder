@@ -1,8 +1,14 @@
+const COLOR_INITIAL = "#ff0000";
+const COLOR_VOWEL = "#729fcf";
+const COLOR_FINAL = "#81d41a";
+/** Gray for keys not in any bank; distinct from canvas background (#374151). */
+const COLOR_DEFAULT = "#6b7280";
 export class LayoutVisual {
   private readonly canvas: HTMLCanvasElement;
   private readonly container: HTMLElement;
   private resizeObserver: ResizeObserver | null = null;
   private keyLabels: string[] = [];
+  private banks: { initials: string; vowels: string; finals: string } | null = null;
   private highlightedLeftKeys: Set<string> = new Set();
   private highlightedRightKeys: Set<string> = new Set();
   private highlightedCenterKeys: Set<string> = new Set();
@@ -14,6 +20,11 @@ export class LayoutVisual {
 
   setKeyLabels(labels: string[]): void {
     this.keyLabels = labels.length >= 24 ? labels.slice(0, 24) : [];
+    this.draw();
+  }
+
+  setBanks(banks: { initials: string; vowels: string; finals: string } | null): void {
+    this.banks = banks;
     this.draw();
   }
 
@@ -70,13 +81,27 @@ export class LayoutVisual {
       13, 14,
     ];
 
-    const keyColor = (k: number): string => {
+    const keyColorByBanks = (keyName: string, indexInKeyOrder: number): string => {
+      if (!this.banks || !keyName) return COLOR_DEFAULT;
+      const inInitial = this.banks.initials.includes(keyName);
+      const inVowel = this.banks.vowels.includes(keyName);
+      const inFinal = this.banks.finals.includes(keyName);
+      const firstOccurrence = this.keyLabels.indexOf(keyName) === indexInKeyOrder;
+      // Character in both initial and vowel, or both initial and final: first = initial (red), later = final (green)
+      if (inInitial && (inVowel || inFinal)) return firstOccurrence ? COLOR_INITIAL : COLOR_FINAL;
+      if (inInitial) return COLOR_INITIAL;
+      if (inVowel) return COLOR_VOWEL;
+      if (inFinal) return COLOR_FINAL;
+      return COLOR_DEFAULT;
+    };
+
+    const keyColorByPosition = (k: number): string => {
       if (k <= 3) return "#8d281e";
       if (k <= 10) return "#ff0000";
       if ((k >= 11 && k <= 13) || (k >= 23 && k <= 24)) return "#729fcf";
       if (k >= 14 && k <= 21) return "#81d41a";
       if (k === 22) return "#00a933";
-      return "#374151";
+      return COLOR_DEFAULT;
     };
 
     const hasHighlight =
@@ -88,14 +113,18 @@ export class LayoutVisual {
     let n = 1;
     const label = (c: CanvasRenderingContext2D, x: number, y: number, w: number, h: number): void => {
       const displayIdx = DISPLAY_INDEX[n - 1] ?? n;
-      const keyName = this.keyLabels[displayIdx - 1];
+      const indexInKeyOrder = displayIdx - 1;
+      const keyName = this.keyLabels[indexInKeyOrder];
       const isLeft = n <= 12;
       const isHighlighted =
         !hasHighlight ||
         (keyName !== undefined &&
           (this.highlightedCenterKeys.has(keyName) ||
             (isLeft ? this.highlightedLeftKeys.has(keyName) : this.highlightedRightKeys.has(keyName))));
-      c.fillStyle = isHighlighted ? keyColor(n) : grayedFill;
+      const fillColor = this.banks
+        ? keyColorByBanks(keyName ?? "", indexInKeyOrder)
+        : keyColorByPosition(n);
+      c.fillStyle = isHighlighted ? fillColor : grayedFill;
       c.fillRect(x, y, w, h);
       c.fillStyle = isHighlighted ? "#e5e7eb" : grayedText;
       c.font = `${Math.max(10, Math.floor(size * 0.4))}px sans-serif`;

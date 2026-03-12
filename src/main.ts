@@ -8,6 +8,9 @@ const maxEntriesEl = document.getElementById("max-entries") as HTMLInputElement;
 const outputEl = document.getElementById("chord-output")!;
 const outputCountEl = document.getElementById("chord-output-count")!;
 
+const configCustomJson = document.getElementById("config-custom-json") as HTMLTextAreaElement;
+const configCustomStatus = document.getElementById("config-custom-status")!;
+
 const URL_PARAM_VERSION = "version";
 const URL_PARAM_TEXT = "text";
 const URL_PARAM_MAX = "max";
@@ -16,6 +19,19 @@ const URL_PARAM_SEARCH = "search";
 
 const DEFAULT_VERSION = "v26.0";
 const DEFAULT_MAX = "100";
+
+/** Chord JSON: initials, vowels, finals, suffixes, briefs, banks, and keyOrder (required). */
+type ChordData = {
+  initials?: Record<string, string>;
+  vowels?: Record<string, string>;
+  finals?: Record<string, string>;
+  suffixes?: Record<string, string>;
+  briefs?: Record<string, string>;
+  banks?: { initials?: string; vowels?: string; finals?: string };
+  keyOrder?: string;
+};
+
+let customChordData: ChordData | null = null;
 
 function getUrlParams(): {
   version?: string;
@@ -34,10 +50,11 @@ function getUrlParams(): {
   };
 }
 
-function getTabFromHash(): "lookup" | "chords" | "csv" {
+function getTabFromHash(): "lookup" | "chords" | "csv" | "config" {
   const hash = window.location.hash.slice(1).toLowerCase();
   if (hash === "chords") return "chords";
   if (hash === "csv") return "csv";
+  if (hash === "config") return "config";
   return "lookup";
 }
 
@@ -51,9 +68,13 @@ function applyUrlParams(): void {
     }
   }
   if (tab === "csv") window.location.hash = "csv";
+  if (tab === "config") window.location.hash = "config";
   if (version != null) {
     const option = Array.from(versionEl.options).find((o) => o.value === version);
-    if (option) versionEl.value = version;
+    if (option) {
+      versionEl.value = version;
+      updateConfigCustomVisibility();
+    }
   }
   if (text != null) inputEl.value = text;
   if (max != null) {
@@ -70,7 +91,7 @@ function syncUrlFromControls(): void {
   const text = inputEl.value.trim();
   const max = maxEntriesEl?.value.trim() ?? "";
   const search = chordsSearchInput?.value.trim() ?? "";
-  if (version && version !== DEFAULT_VERSION) params.set(URL_PARAM_VERSION, version);
+  if (version && version !== DEFAULT_VERSION) params.set(URL_PARAM_VERSION, version); // includes "custom"
   params.set(URL_PARAM_TAB, tab);
   if (tab === "lookup" && text) params.set(URL_PARAM_TEXT, text);
   if (tab === "chords" && search) params.set(URL_PARAM_SEARCH, search);
@@ -86,6 +107,11 @@ let requestId = 0;
 let totalShownForRequest = 0;
 
 function setOutput(html: string) {
+  if (pinnedChordEl) {
+    pinnedChordEl.classList.remove("chord-box-pinned");
+    pinnedChordEl = null;
+    layoutVisual?.setHighlightedKeys([], [], []);
+  }
   outputEl.innerHTML = html;
 }
 
@@ -98,11 +124,11 @@ function escapeHtml(s: string): string {
 const keyNamesSorted = (keyNames: string[]) =>
   [...keyNames].filter((k) => k.length > 0).sort((a, b) => b.length - a.length);
 
-/** Parse a chord string into the set of key names using keyNames (longest-first). */
+/** Parse a chord string into the set of key names using keyNames (longest-first). Hyphens are stripped so keys after a separator (e.g. "%AOE^#-NCH") are still parsed. */
 function parseChordToKeys(chordStr: string, keyNames: string[]): Set<string> {
   const keys = new Set<string>();
   const sorted = keyNamesSorted(keyNames);
-  let rest = chordStr;
+  let rest = chordStr.replace(/-/g, "");
   while (rest) {
     let matched = false;
     for (const key of sorted) {
@@ -198,7 +224,7 @@ function appendChunk(spellings: string[], ways: Stroke[][]): void {
 }
 
 function requestUpdate() {
-  const version = versionEl.value;
+  const source = versionEl.value;
   const target = inputEl.value.trim().toLowerCase();
   const id = ++requestId;
 
@@ -212,20 +238,50 @@ function requestUpdate() {
   const maxEntries =
     maxEntriesRaw === "" ? undefined : Math.max(1, parseInt(maxEntriesRaw, 10) || 0) || undefined;
 
+  if (source === "custom") {
+    if (!customChordData) {
+      outputCountEl.textContent = "";
+      setOutput('<span class="text-amber-600">Paste valid chord JSON in the Config tab.</span>');
+      return;
+    }
+    totalShownForRequest = 0;
+    outputCountEl.textContent = "";
+    setOutput('<span class="text-gray-500">Computing…</span>');
+    worker.postMessage({ type: "compute", id, data: customChordData, target, maxEntries });
+    return;
+  }
+
   totalShownForRequest = 0;
   outputCountEl.textContent = "";
   setOutput('<span class="text-gray-500">Computing…</span>');
-  worker.postMessage({ type: "compute", id, version, target, maxEntries });
+  worker.postMessage({ type: "compute", id, version: source, target, maxEntries });
 }
 
 const CSV_REQUEST_ID = -1;
+const CSV_ROW_BATCH_SIZE = 100;
 let csvTableData: { word: string; chordOutput: string }[] = [];
+let csvRowBuffer: { index: number; word: string; chordOutput: string }[] = [];
 let csvWordQueue: string[] = [];
 let csvCurrentWord = "";
 let csvTotalWords = 0;
 
+function flushCsvRowBuffer(): void {
+  if (csvRowBuffer.length === 0) return;
+  const frag = document.createDocumentFragment();
+  for (const { index, word, chordOutput } of csvRowBuffer) {
+    const chordCount = chordOutput ? chordOutput.split(" / ").length : 0;
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 last:border-0";
+    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${index}</td><td class="px-3 py-1.5 text-gray-800">${escapeHtml(word)}</td><td class="px-3 py-1.5 text-gray-700 font-mono">${escapeHtml(chordOutput)}</td><td class="px-3 py-1.5 text-gray-600">${chordCount}</td>`;
+    frag.appendChild(tr);
+  }
+  csvTbody.appendChild(frag);
+  csvRowBuffer.length = 0;
+}
+
 function processNextCsvWord(): void {
   if (csvWordQueue.length === 0) {
+    flushCsvRowBuffer();
     csvStatusEl.textContent = `Done. ${csvTableData.length} word(s).`;
     csvComputeBtn.removeAttribute("disabled");
     csvSaveBtn.removeAttribute("disabled");
@@ -234,13 +290,29 @@ function processNextCsvWord(): void {
   csvCurrentWord = csvWordQueue.shift()!;
   const m = csvTableData.length + 1;
   csvStatusEl.textContent = `Computing: ${escapeHtml(csvCurrentWord)}… (${m} of ${csvTotalWords} entries)`;
-  worker.postMessage({
-    type: "compute",
-    id: CSV_REQUEST_ID,
-    version: versionEl.value,
-    target: csvCurrentWord.trim().toLowerCase(),
-    maxEntries: 1,
-  });
+  const source = versionEl.value;
+  if (source === "custom" && customChordData) {
+    worker.postMessage({
+      type: "compute",
+      id: CSV_REQUEST_ID,
+      data: customChordData,
+      target: csvCurrentWord.trim().toLowerCase(),
+      maxEntries: 1,
+    });
+  } else if (source !== "custom") {
+    worker.postMessage({
+      type: "compute",
+      id: CSV_REQUEST_ID,
+      version: source,
+      target: csvCurrentWord.trim().toLowerCase(),
+      maxEntries: 1,
+    });
+  } else {
+    csvWordQueue = [];
+    csvStatusEl.textContent = "Paste valid chord JSON in the Config tab.";
+    csvComputeBtn.removeAttribute("disabled");
+    csvSaveBtn.removeAttribute("disabled");
+  }
 }
 
 function chordOutputWithJoiner(display: string): string {
@@ -248,30 +320,21 @@ function chordOutputWithJoiner(display: string): string {
   return chords.map((c, i) => (i > 0 ? "+" + c : c)).join(" / ");
 }
 
-function appendCsvRow(index: number, word: string, chordOutput: string): void {
-  const chordCount = chordOutput ? chordOutput.split(" / ").length : 0;
-  const tr = document.createElement("tr");
-  tr.className = "border-b border-gray-100 last:border-0";
-  tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${index}</td><td class="px-3 py-1.5 text-gray-800">${escapeHtml(word)}</td><td class="px-3 py-1.5 text-gray-700 font-mono">${escapeHtml(chordOutput)}</td><td class="px-3 py-1.5 text-gray-600">${chordCount}</td>`;
-  csvTbody.appendChild(tr);
-}
-
 worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: string[]; ways?: Stroke[][]; total?: number; message?: string }>) => {
   const { type, id } = e.data;
   if (id === CSV_REQUEST_ID) {
-    if (type === "chunk" && e.data.spellings !== undefined && e.data.spellings.length > 0) {
-      const chordOutput = chordOutputWithJoiner(e.data.spellings[0]);
+    const pushRow = (chordOutput: string) => {
       csvTableData.push({ word: csvCurrentWord, chordOutput });
-      appendCsvRow(csvTableData.length, csvCurrentWord, chordOutput);
+      csvRowBuffer.push({ index: csvTableData.length, word: csvCurrentWord, chordOutput });
+      if (csvRowBuffer.length >= CSV_ROW_BATCH_SIZE) flushCsvRowBuffer();
       processNextCsvWord();
+    };
+    if (type === "chunk" && e.data.spellings !== undefined && e.data.spellings.length > 0) {
+      pushRow(chordOutputWithJoiner(e.data.spellings[0]));
     } else if (type === "resultDone" && e.data.total === 0) {
-      csvTableData.push({ word: csvCurrentWord, chordOutput: "" });
-      appendCsvRow(csvTableData.length, csvCurrentWord, "");
-      processNextCsvWord();
+      pushRow("");
     } else if (type === "error" && e.data.message !== undefined) {
-      csvTableData.push({ word: csvCurrentWord, chordOutput: "" });
-      appendCsvRow(csvTableData.length, csvCurrentWord, "");
-      processNextCsvWord();
+      pushRow("");
     }
     return;
   }
@@ -301,14 +364,40 @@ worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: stri
 
 let layoutVisual: LayoutVisual | null = null;
 let keyOrders: Record<string, string[]> = {};
+let layoutBanks: Record<string, { initials: string; vowels: string; finals: string }> = {};
 
 function updateLayoutLabelsForVersion(version: string): void {
   const keys = keyOrders[version];
-  if (keys && keys.length >= 24) layoutVisual?.setKeyLabels(keys.slice(0, 24));
-  else layoutVisual?.setKeyLabels([]);
+  if (keys && keys.length >= 24) {
+    layoutVisual?.setKeyLabels(keys.slice(0, 24));
+    layoutVisual?.setBanks(layoutBanks[version] ?? null);
+  } else {
+    layoutVisual?.setKeyLabels([]);
+    layoutVisual?.setBanks(null);
+  }
 }
 
-function applyChordHighlight(el: HTMLElement): void {
+/** Split key names into left (keyOrder indices 0–11) and right (12–23). Used for briefs. */
+function splitKeysByHand(keys: Set<string>, keyNames: string[]): { left: Set<string>; right: Set<string> } {
+  const left = new Set<string>();
+  const right = new Set<string>();
+  for (let i = 0; i < keyNames.length; i++) {
+    const k = keyNames[i];
+    if (keys.has(k)) {
+      if (i < 12) left.add(k);
+      else right.add(k);
+    }
+  }
+  return { left, right };
+}
+
+function clearChordHighlight(): void {
+  layoutVisual?.setHighlightedKeys([], [], []);
+}
+
+let pinnedChordEl: HTMLElement | null = null;
+
+function applyChordHighlight(el: HTMLElement, pinned = false): void {
   if (!layoutVisual) return;
   const initial = el.getAttribute("data-initial") ?? "";
   const vowel = el.getAttribute("data-vowel") ?? "";
@@ -322,9 +411,17 @@ function applyChordHighlight(el: HTMLElement): void {
   const centerKeys = parseChordToKeys(vowel, keyNames);
   const finalKeys = parseChordToKeys(final, keyNames);
   const suffixKeys = parseChordToKeys(suffix, keyNames);
-  // Initial on left, final on right; prefix/suffix (when we have prefix) highlight both sides
-  const leftKeys = new Set<string>([...initialKeys, ...suffixKeys]);
-  const rightKeys = new Set<string>([...finalKeys, ...suffixKeys]);
+  let leftKeys: Set<string>;
+  let rightKeys: Set<string>;
+  const isBrief = initial.length > 0 && !vowel && !final && !suffix;
+  if (isBrief) {
+    const byHand = splitKeysByHand(initialKeys, keyNames);
+    leftKeys = new Set([...byHand.left, ...suffixKeys]);
+    rightKeys = new Set([...byHand.right, ...suffixKeys]);
+  } else {
+    leftKeys = new Set<string>([...initialKeys, ...suffixKeys]);
+    rightKeys = new Set<string>([...finalKeys, ...suffixKeys]);
+  }
   if (chordIndex > 0 && keyNames.includes("+")) {
     const joinerIdx = keyNames.indexOf("+");
     if (joinerIdx < 12) leftKeys.add("+");
@@ -333,26 +430,56 @@ function applyChordHighlight(el: HTMLElement): void {
   layoutVisual.setHighlightedKeys(leftKeys, rightKeys, centerKeys);
 }
 
-function clearChordHighlight(): void {
-  layoutVisual?.setHighlightedKeys([], [], []);
+function updateChordHighlightForEl(el: HTMLElement): void {
+  applyChordHighlight(el, false);
 }
 
 outputEl.addEventListener("mouseover", (e: Event) => {
   const el = (e.target as HTMLElement).closest(".chord-box");
-  if (el) applyChordHighlight(el as HTMLElement);
-  else clearChordHighlight();
+  if (el) {
+    updateChordHighlightForEl(el as HTMLElement);
+  } else {
+    if (pinnedChordEl) applyChordHighlight(pinnedChordEl, true);
+    else clearChordHighlight();
+  }
 });
 
 outputEl.addEventListener("mouseleave", () => {
-  clearChordHighlight();
+  if (pinnedChordEl) applyChordHighlight(pinnedChordEl, true);
+  else clearChordHighlight();
+});
+
+outputEl.addEventListener("click", (e: Event) => {
+  const el = (e.target as HTMLElement).closest(".chord-box");
+  if (!el) return;
+  const chordEl = el as HTMLElement;
+  if (chordEl === pinnedChordEl) {
+    pinnedChordEl.classList.remove("chord-box-pinned");
+    pinnedChordEl = null;
+    clearChordHighlight();
+    return;
+  }
+  if (pinnedChordEl) pinnedChordEl.classList.remove("chord-box-pinned");
+  pinnedChordEl = chordEl;
+  pinnedChordEl.classList.add("chord-box-pinned");
+  applyChordHighlight(pinnedChordEl, true);
 });
 
 versionEl.addEventListener("change", () => {
+  updateConfigCustomVisibility();
   syncUrlFromControls();
   requestUpdate();
   updateLayoutLabelsForVersion(versionEl.value);
   if (getTabFromHash() === "chords") loadAndRenderChords();
 });
+
+if (configCustomJson) {
+  configCustomJson.addEventListener("input", () => {
+    parseCustomJson();
+    requestUpdate();
+  });
+  configCustomJson.addEventListener("blur", () => parseCustomJson());
+}
 inputEl.addEventListener("input", () => {
   syncUrlFromControls();
   requestUpdate();
@@ -366,9 +493,124 @@ maxEntriesEl?.addEventListener("input", () => {
 const tabLookup = document.getElementById("tab-lookup")!;
 const tabChords = document.getElementById("tab-chords")!;
 const tabCsv = document.getElementById("tab-csv")!;
+const tabConfig = document.getElementById("tab-config")!;
 const panelLookup = document.getElementById("panel-lookup")!;
 const panelChords = document.getElementById("panel-chords")!;
 const panelCsv = document.getElementById("panel-csv")!;
+const panelConfig = document.getElementById("panel-config")!;
+
+function chordFileName(version: string): string {
+  if (version.startsWith("pinechord-")) return `pinechord-chords-${version.slice(10)}.json`;
+  return `pinchord-chords-${version}.json`;
+}
+
+async function loadConfigJsonForVersion(version: string): Promise<void> {
+  if (!configCustomJson || !configCustomStatus) return;
+  configCustomStatus.textContent = "Loading…";
+  configCustomStatus.classList.remove("text-red-600");
+  try {
+    const res = await fetch(`chord-versions/${chordFileName(version)}`);
+    if (!res.ok) throw new Error(res.statusText);
+    const data = (await res.json()) as ChordData;
+    configCustomJson.value = JSON.stringify(data, null, 2);
+    configCustomJson.readOnly = true;
+    if (typeof data.keyOrder === "string" && data.keyOrder.length === 24) {
+      keyOrders[version] = data.keyOrder.split("");
+      layoutBanks[version] = {
+        initials: data.banks?.initials ?? "",
+        vowels: data.banks?.vowels ?? "",
+        finals: data.banks?.finals ?? "",
+      };
+      if (versionEl.value === version) updateLayoutLabelsForVersion(version);
+    }
+    configCustomStatus.textContent = `Showing chord data for ${version}.`;
+  } catch {
+    configCustomJson.value = "";
+    configCustomJson.readOnly = false;
+    configCustomStatus.textContent = `Failed to load chord data for ${version}.`;
+    configCustomStatus.classList.add("text-red-600");
+  }
+}
+
+function updateConfigCustomVisibility(): void {
+  const version = versionEl.value;
+  const isCustom = version === "custom";
+  if (isCustom) {
+    configCustomJson.readOnly = false;
+    parseCustomJson();
+  } else {
+    loadConfigJsonForVersion(version);
+  }
+}
+
+function parseCustomJson(): boolean {
+  if (!configCustomJson) return false;
+  const raw = configCustomJson.value.trim();
+  if (!raw) {
+    customChordData = null;
+    delete keyOrders["custom"];
+    delete layoutBanks["custom"];
+    if (versionEl.value === "custom") updateLayoutLabelsForVersion("custom");
+    configCustomStatus.textContent = "Paste chord JSON with initials/vowels/finals, suffixes, and keyOrder.";
+    configCustomStatus.classList.remove("text-red-600");
+    return false;
+  }
+  try {
+    const data = JSON.parse(raw) as ChordData;
+    if (
+      data &&
+      typeof data === "object" &&
+      (Object.keys(data.initials ?? {}).length > 0 ||
+        Object.keys(data.vowels ?? {}).length > 0 ||
+        Object.keys(data.finals ?? {}).length > 0)
+    ) {
+      if (typeof data.keyOrder !== "string" || data.keyOrder.length === 0) {
+        customChordData = null;
+        delete keyOrders["custom"];
+        delete layoutBanks["custom"];
+        if (versionEl.value === "custom") updateLayoutLabelsForVersion("custom");
+        configCustomStatus.textContent = "JSON must include a non-empty keyOrder string.";
+        configCustomStatus.classList.add("text-red-600");
+        return false;
+      }
+      const EXPECTED_KEY_ORDER_LENGTH = 24;
+      if (data.keyOrder.length !== EXPECTED_KEY_ORDER_LENGTH) {
+        customChordData = null;
+        delete keyOrders["custom"];
+        delete layoutBanks["custom"];
+        if (versionEl.value === "custom") updateLayoutLabelsForVersion("custom");
+        configCustomStatus.textContent = `keyOrder must be exactly ${EXPECTED_KEY_ORDER_LENGTH} characters (got ${data.keyOrder.length}).`;
+        configCustomStatus.classList.add("text-red-600");
+        return false;
+      }
+      customChordData = data;
+      keyOrders["custom"] = data.keyOrder.split("");
+      layoutBanks["custom"] = {
+        initials: data.banks?.initials ?? "",
+        vowels: data.banks?.vowels ?? "",
+        finals: data.banks?.finals ?? "",
+      };
+      if (versionEl.value === "custom") updateLayoutLabelsForVersion("custom");
+      configCustomStatus.textContent = "Valid. Chord data in use.";
+      configCustomStatus.classList.remove("text-red-600");
+      return true;
+    }
+    customChordData = null;
+    delete keyOrders["custom"];
+    delete layoutBanks["custom"];
+    configCustomStatus.textContent = "JSON must include at least one of: initials, vowels, finals.";
+    configCustomStatus.classList.add("text-red-600");
+    return false;
+  } catch {
+    customChordData = null;
+    delete keyOrders["custom"];
+    delete layoutBanks["custom"];
+    if (versionEl.value === "custom") updateLayoutLabelsForVersion("custom");
+    configCustomStatus.textContent = "Invalid JSON.";
+    configCustomStatus.classList.add("text-red-600");
+    return false;
+  }
+}
 
 // CSV tab
 const csvWordsEl = document.getElementById("csv-words") as HTMLTextAreaElement;
@@ -386,29 +628,37 @@ const chordsInitialsTbody = document.getElementById("chords-initials-tbody")!;
 const chordsVowelsTbody = document.getElementById("chords-vowels-tbody")!;
 const chordsFinalsTbody = document.getElementById("chords-finals-tbody")!;
 
-type ChordsTableId = "initials" | "vowels" | "finals";
+const chordsBriefsTbody = document.getElementById("chords-briefs-tbody")!;
+const chordsBriefsSection = document.getElementById("chords-briefs-section")!;
+
+type ChordsTableId = "initials" | "vowels" | "finals" | "briefs";
 const chordsTbodies: Record<ChordsTableId, HTMLElement> = {
   initials: chordsInitialsTbody,
   vowels: chordsVowelsTbody,
   finals: chordsFinalsTbody,
+  briefs: chordsBriefsTbody,
 };
 
 let chordsTableData: Record<ChordsTableId, Record<string, string>> = {
   initials: {},
   vowels: {},
   finals: {},
+  briefs: {},
 };
 
 let chordsSortState: Record<ChordsTableId, { col: 0 | 1; dir: 1 | -1 }> = {
   initials: { col: 1, dir: 1 },
   vowels: { col: 1, dir: 1 },
   finals: { col: 1, dir: 1 },
+  briefs: { col: 1, dir: 1 },
 };
 
 let chordsSearchQuery = "";
 let chordsSearchBy: "stroke" | "outline" = "outline";
 
 const CHORDS_COL_LABELS = ["Stroke", "Translation"] as const;
+const MAX_CHORD_TABLE_ROWS = 1000;
+const CHORDS_SEARCH_DEBOUNCE_MS = 150;
 
 function filterChordsData(data: Record<string, string>, query: string, by: "stroke" | "outline"): Record<string, string> {
   const q = query.trim().toLowerCase();
@@ -426,7 +676,8 @@ function fillChordTable(
   tbody: HTMLElement,
   data: Record<string, string>,
   sortCol: 0 | 1 = 0,
-  sortDir: 1 | -1 = 1
+  sortDir: 1 | -1 = 1,
+  maxRows = MAX_CHORD_TABLE_ROWS
 ): void {
   tbody.innerHTML = "";
   const entries = Object.entries(data);
@@ -436,10 +687,20 @@ function fillChordTable(
     const c = (va || "").localeCompare(vb || "", undefined, { sensitivity: "base", numeric: true });
     return c * sortDir;
   });
-  for (const [stroke, outline] of entries) {
+  const total = entries.length;
+  const toRender = total <= maxRows ? entries : entries.slice(0, maxRows);
+  const frag = document.createDocumentFragment();
+  for (const [stroke, outline] of toRender) {
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 last:border-0";
     tr.innerHTML = `<td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(stroke || "∅")}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(outline)}</td>`;
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+  if (total > maxRows) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 bg-gray-50";
+    tr.innerHTML = `<td colspan="2" class="px-3 py-2 text-sm text-gray-500">Showing first ${maxRows.toLocaleString()} of ${total.toLocaleString()} entries. Narrow the search to see more.</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -464,6 +725,7 @@ function renderAllChordsTables(): void {
   renderChordsTable("initials");
   renderChordsTable("vowels");
   renderChordsTable("finals");
+  if (!chordsBriefsSection.classList.contains("hidden")) renderChordsTable("briefs");
 }
 
 function handleChordsThClick(ev: Event): void {
@@ -481,12 +743,25 @@ function handleChordsThClick(ev: Event): void {
 
 chordsTables.addEventListener("click", handleChordsThClick);
 
+let chordsSearchDebounce: ReturnType<typeof setTimeout> | null = null;
+function scheduleChordsSearchUpdate(): void {
+  if (chordsSearchDebounce != null) clearTimeout(chordsSearchDebounce);
+  chordsSearchDebounce = setTimeout(() => {
+    chordsSearchDebounce = null;
+    chordsSearchQuery = chordsSearchInput.value;
+    renderAllChordsTables();
+    syncUrlFromControls();
+  }, CHORDS_SEARCH_DEBOUNCE_MS);
+}
+
 chordsSearchInput.addEventListener("input", () => {
-  chordsSearchQuery = chordsSearchInput.value;
-  renderAllChordsTables();
-  syncUrlFromControls();
+  scheduleChordsSearchUpdate();
 });
 chordsSearchInput.addEventListener("change", () => {
+  if (chordsSearchDebounce != null) {
+    clearTimeout(chordsSearchDebounce);
+    chordsSearchDebounce = null;
+  }
   chordsSearchQuery = chordsSearchInput.value;
   renderAllChordsTables();
   syncUrlFromControls();
@@ -499,25 +774,37 @@ document.querySelectorAll<HTMLInputElement>('input[name="chords-search-by"]').fo
 });
 
 async function loadAndRenderChords(): Promise<void> {
-  const version = versionEl.value;
+  const source = versionEl.value;
   chordsStatus.textContent = "Loading…";
   chordsStatus.classList.remove("hidden");
   chordsSearch.classList.add("hidden");
   chordsTables.classList.add("hidden");
   try {
-    const res = await fetch(`chord-versions/pinchord-chords-${version}.json`);
-    if (!res.ok) throw new Error(res.statusText);
-    const data = (await res.json()) as {
-      initials?: Record<string, string>;
-      vowels?: Record<string, string>;
-      finals?: Record<string, string>;
-    };
+    let data: ChordData;
+    if (source === "custom") {
+      if (!customChordData) {
+        chordsStatus.textContent = "Paste valid chord JSON in Config, or choose a version.";
+        chordsStatus.classList.remove("hidden");
+        return;
+      }
+      data = customChordData;
+    } else {
+      const res = await fetch(`chord-versions/${chordFileName(source)}`);
+      if (!res.ok) throw new Error(res.statusText);
+      data = (await res.json()) as ChordData;
+    }
     const rawInitials = data.initials ?? {};
+    const rawBriefs = data.briefs ?? {};
+    const hasBriefs = Object.keys(rawBriefs).length > 0;
     chordsTableData = {
       initials: Object.fromEntries(Object.entries(rawInitials).filter(([k]) => k !== "")),
       vowels: data.vowels ?? {},
       finals: data.finals ?? {},
+      briefs: rawBriefs,
     };
+    chordsBriefsSection.classList.toggle("hidden", !hasBriefs);
+    chordsTables.classList.toggle("grid-cols-3", !hasBriefs);
+    chordsTables.classList.toggle("grid-cols-4", hasBriefs);
     chordsSearch.classList.remove("hidden");
     chordsTables.classList.remove("hidden");
     chordsStatus.classList.add("hidden");
@@ -530,11 +817,12 @@ async function loadAndRenderChords(): Promise<void> {
   }
 }
 
-function setActiveTab(active: "lookup" | "chords" | "csv"): void {
+function setActiveTab(active: "lookup" | "chords" | "csv" | "config"): void {
   for (const [t, el] of [
     ["lookup", tabLookup],
     ["chords", tabChords],
     ["csv", tabCsv],
+    ["config", tabConfig],
   ] as const) {
     const on = active === t;
     el.classList.toggle("border-indigo-500", on);
@@ -546,10 +834,11 @@ function setActiveTab(active: "lookup" | "chords" | "csv"): void {
   panelLookup.classList.toggle("hidden", active !== "lookup");
   panelChords.classList.toggle("hidden", active !== "chords");
   panelCsv.classList.toggle("hidden", active !== "csv");
+  panelConfig.classList.toggle("hidden", active !== "config");
   if (active === "chords") loadAndRenderChords();
 }
 
-function switchTab(tab: "lookup" | "chords" | "csv"): void {
+function switchTab(tab: "lookup" | "chords" | "csv" | "config"): void {
   setActiveTab(tab);
 }
 
@@ -559,9 +848,14 @@ function escapeCsv(val: string): string {
 }
 
 csvComputeBtn.addEventListener("click", () => {
+  if (versionEl.value === "custom" && !customChordData) {
+    csvStatusEl.textContent = "Paste valid chord JSON in the Config tab first.";
+    return;
+  }
   const text = csvWordsEl.value.trim();
   const words = text ? text.split(/\s+/).filter(Boolean) : [];
   csvTableData = [];
+  csvRowBuffer = [];
   csvTbody.innerHTML = "";
   if (words.length === 0) {
     csvStatusEl.textContent = "Enter words separated by whitespace.";
@@ -598,6 +892,7 @@ window.addEventListener("hashchange", () => {
 });
 
 applyUrlParams();
+updateConfigCustomVisibility();
 switchTab(getTabFromHash());
 updateLayoutLabelsForVersion(versionEl.value);
 requestUpdate();
