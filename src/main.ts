@@ -357,17 +357,26 @@ csvTable.addEventListener("click", (ev: Event) => {
 });
 updateCsvSortIndicators();
 
+function csvRunningAvgText(): string {
+  if (csvTableData.length === 0) return "";
+  const totalChords = csvTableData.reduce((s, r) => s + getCsvChordCount(r), 0);
+  const avg = totalChords / csvTableData.length;
+  return ` — avg ${avg.toFixed(2)} chords/word`;
+}
+
 function processNextCsvWord(): void {
   if (csvWordQueue.length === 0) {
     flushCsvRowBuffer();
-    csvStatusEl.textContent = `Done. ${csvTableData.length} word(s).`;
+    const avgText = csvTableData.length > 0 ? csvRunningAvgText() : "";
+    csvStatusEl.textContent = `Done. ${csvTableData.length} word(s).${avgText}`;
     csvComputeBtn.removeAttribute("disabled");
     csvSaveBtn.removeAttribute("disabled");
     return;
   }
   csvCurrentWord = csvWordQueue.shift()!;
   const m = csvTableData.length + 1;
-  csvStatusEl.textContent = `Computing: ${escapeHtml(csvCurrentWord)}… (${m} of ${csvTotalWords} entries)`;
+  const avgText = csvTableData.length > 0 ? csvRunningAvgText() : "";
+  csvStatusEl.textContent = `Computing: ${escapeHtml(csvCurrentWord)}… (${m} of ${csvTotalWords} entries)${avgText}`;
   const source = versionEl.value;
   if (source === "custom" && customChordData) {
     worker.postMessage({
