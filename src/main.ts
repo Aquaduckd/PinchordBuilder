@@ -147,7 +147,7 @@ function parseChordToKeys(chordStr: string, keyNames: string[]): Set<string> {
 /** [initial, vowel, final, suffix] stroke parts from worker */
 type Stroke = [string, string, string, string];
 
-function buildRow(display: string, strokes: Stroke[]): string {
+function buildRow(display: string, strokes: Stroke[], segmentOutputs?: string[]): string {
   const chords = display.split(" / ");
   const slash = '<span class="text-gray-400 text-sm px-0.5">/</span>';
   const boxes = chords
@@ -156,15 +156,17 @@ function buildRow(display: string, strokes: Stroke[]): string {
       const [initial, vowel, final, suffix] = stroke;
       const attrs = `data-initial="${escapeHtml(initial)}" data-vowel="${escapeHtml(vowel)}" data-final="${escapeHtml(final)}" data-suffix="${escapeHtml(suffix)}" data-chord-index="${chordIndex}"`;
       const label = chordIndex > 0 ? "+" + c : c;
-      return `<span class="chord-box inline-block rounded border border-gray-300 bg-white px-2 py-0.5 text-sm font-medium text-gray-800 cursor-pointer hover:bg-gray-100" ${attrs}>${escapeHtml(label)}</span>`;
+      const out = segmentOutputs?.[chordIndex];
+      const outputHtml = out !== undefined ? `<span class="block text-xs text-gray-500 mt-0.5">${escapeHtml(out)}</span>` : "";
+      return `<span class="chord-box-wrapper inline-flex flex-col items-start"><span class="chord-box inline-block rounded border border-gray-300 bg-white px-2 py-0.5 text-sm font-medium text-gray-800 cursor-pointer hover:bg-gray-100" ${attrs}>${escapeHtml(label)}</span>${outputHtml}</span>`;
     })
     .join(slash);
-  return `<div class="flex flex-wrap gap-1.5 items-center h-[2.25rem] border-b border-gray-200 py-0">${boxes}</div>`;
+  return `<div class="flex flex-wrap gap-1.5 items-center min-h-[2.25rem] border-b border-gray-200 py-1">${boxes}</div>`;
 }
 
-function buildChunkLines(spellings: string[], ways: Stroke[][]): string {
+function buildChunkLines(spellings: string[], ways: Stroke[][], outputSegments?: string[][]): string {
   return spellings
-    .map((s, wayIndex) => buildRow(s, ways[wayIndex] ?? []))
+    .map((s, wayIndex) => buildRow(s, ways[wayIndex] ?? [], outputSegments?.[wayIndex]))
     .join("");
 }
 
@@ -210,7 +212,7 @@ function renderSpellings(target: string, spellings: string[], ways: Stroke[][]) 
   );
 }
 
-function appendChunk(spellings: string[], ways: Stroke[][]): void {
+function appendChunk(spellings: string[], ways: Stroke[][], outputSegments?: string[][]): void {
   let container = outputEl.querySelector(".chord-output-inner");
   if (!container) {
     outputEl.innerHTML = '<div class="chord-output-inner flex flex-col gap-2"></div>';
@@ -219,7 +221,7 @@ function appendChunk(spellings: string[], ways: Stroke[][]): void {
   for (let i = 0; i < spellings.length; i++) {
     const chordCount = (ways[i] ?? []).length;
     const bucket = getOrCreateBucket(container, chordCount);
-    bucket.insertAdjacentHTML("beforeend", buildRow(spellings[i], ways[i] ?? []));
+    bucket.insertAdjacentHTML("beforeend", buildRow(spellings[i], ways[i] ?? [], outputSegments?.[i]));
   }
 }
 
@@ -545,7 +547,7 @@ function chordOutputWithJoiner(display: string): string {
   return chords.map((c, i) => (i > 0 ? "+" + c : c)).join(" / ");
 }
 
-worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: string[]; ways?: Stroke[][]; output?: string; total?: number; message?: string }>) => {
+worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: string[]; ways?: Stroke[][]; output?: string; outputSegments?: string[][]; total?: number; message?: string }>) => {
   const { type, id } = e.data;
   if (id === CSV_REQUEST_ID) {
     const pushRow = (chordOutput: string, output = "", strokes?: Stroke[]) => {
@@ -567,7 +569,7 @@ worker.onmessage = (e: MessageEvent<{ type: string; id: number; spellings?: stri
   }
   if (id !== requestId) return;
   if (type === "chunk" && e.data.spellings !== undefined && e.data.ways !== undefined) {
-    appendChunk(e.data.spellings, e.data.ways);
+    appendChunk(e.data.spellings, e.data.ways, e.data.outputSegments);
     totalShownForRequest += e.data.spellings.length;
     outputCountEl.textContent = `${totalShownForRequest} way(s) so far…`;
   } else if (type === "resultDone" && e.data.total !== undefined) {

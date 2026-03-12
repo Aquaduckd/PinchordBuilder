@@ -216,8 +216,8 @@ async function startJob(
     throw new Error("Either version or data must be provided");
   }
   const rev = getRevMaps(cacheKey, chordData);
-  runJob(id, rev, target, maxEntries, (display, ways, output) => {
-    if (currentJobId === id) self.postMessage({ type: "chunk", id, spellings: display, ways, output });
+  runJob(id, rev, target, maxEntries, (display, ways, output, outputSegments) => {
+    if (currentJobId === id) self.postMessage({ type: "chunk", id, spellings: display, ways, output, outputSegments });
   });
 }
 
@@ -226,7 +226,7 @@ function runJob(
   rev: RevMaps,
   target: string,
   maxEntries: number | undefined,
-  onChunk: (display: string[], ways: Strokes[][], output?: string) => void
+  onChunk: (display: string[], ways: Strokes[][], output?: string, outputSegments?: string[][]) => void
 ): void {
   jobRunning = true;
   (async () => {
@@ -239,7 +239,8 @@ function runJob(
             const display = way.map(([, s]) => chordRepr(s)).join(" / ");
             const strokes = way.map(([, s]) => s);
             const output = way.map(([seg]) => seg).join(" ");
-            onChunk([display], [strokes], output);
+            const outputSegments = [way.map(([seg]) => seg)];
+            onChunk([display], [strokes], output, outputSegments);
           }
           self.postMessage({ type: "resultDone", id, total: way && way.length > 0 ? 1 : 0 });
         }
@@ -265,7 +266,8 @@ function runJob(
         for (const way of batch) {
           const display = way.map(([, s]) => chordRepr(s)).join(" / ");
           const strokes = way.map(([, s]) => s);
-          onChunk([display], [strokes]);
+          const outputSegments = [way.map(([seg]) => seg)];
+          onChunk([display], [strokes], undefined, outputSegments);
         }
         if (generatorDone || (maxEntries !== undefined && total >= maxEntries)) {
           if (currentJobId === id) self.postMessage({ type: "resultDone", id, total });
