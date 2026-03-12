@@ -641,10 +641,21 @@ function applyChordHighlight(el: HTMLElement, pinned = false): void {
   let leftKeys: Set<string>;
   let rightKeys: Set<string>;
   const isBrief = initial.length > 0 && !vowel && !final && !suffix;
+  let effectiveCenterKeys = centerKeys;
   if (isBrief) {
-    const byHand = splitKeysByHand(initialKeys, keyNames);
-    leftKeys = new Set([...byHand.left, ...suffixKeys]);
-    rightKeys = new Set([...byHand.right, ...suffixKeys]);
+    if (initial.includes("-")) {
+      const idx = initial.indexOf("-");
+      const leftHalf = initial.slice(0, idx);
+      const rightHalf = initial.slice(idx + 1);
+      const leftHalfKeys = parseChordToKeys(leftHalf, keyNames);
+      leftKeys = new Set([...leftHalfKeys, ...suffixKeys]);
+      rightKeys = new Set([...parseChordToKeys(rightHalf, keyNames), ...suffixKeys]);
+      effectiveCenterKeys = leftHalfKeys;
+    } else {
+      const byHand = splitKeysByHand(initialKeys, keyNames);
+      leftKeys = new Set([...byHand.left, ...suffixKeys]);
+      rightKeys = new Set([...byHand.right, ...suffixKeys]);
+    }
   } else {
     leftKeys = new Set<string>([...initialKeys, ...suffixKeys]);
     rightKeys = new Set<string>([...finalKeys, ...suffixKeys]);
@@ -654,7 +665,7 @@ function applyChordHighlight(el: HTMLElement, pinned = false): void {
     if (joinerIdx < 12) leftKeys.add("+");
     else rightKeys.add("+");
   }
-  layoutVisual.setHighlightedKeys(leftKeys, rightKeys, centerKeys);
+  layoutVisual.setHighlightedKeys(leftKeys, rightKeys, effectiveCenterKeys);
 }
 
 function updateChordHighlightForEl(el: HTMLElement): void {
