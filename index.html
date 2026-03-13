@@ -96,58 +96,79 @@
           Translations
         </label>
       </fieldset>
+      <label class="flex items-center gap-2 text-sm text-gray-700">
+        Columnize
+        <input
+          type="text"
+          id="chords-columnize-input"
+          maxlength="8"
+          placeholder="e.g. & or &#"
+          class="min-w-[4rem] max-w-24 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm text-gray-900 placeholder-gray-400 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+          aria-label="Columnize by characters (2^n columns)"
+        />
+      </label>
     </div>
-    <div id="chords-tables" class="w-full grid grid-cols-3 gap-4 flex-1 min-h-0 hidden">
-      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="initials">
-        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Initials</h2>
-        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
-          <table class="w-full text-sm min-w-max">
-            <thead class="bg-gray-100 sticky top-0">
-              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
-            </thead>
-            <tbody id="chords-initials-tbody" class="bg-white"></tbody>
-          </table>
-        </div>
-      </section>
-      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="vowels">
-        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Vowels</h2>
-        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
-          <table class="w-full text-sm min-w-max">
-            <thead class="bg-gray-100 sticky top-0">
-              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
-            </thead>
-            <tbody id="chords-vowels-tbody" class="bg-white"></tbody>
-          </table>
-        </div>
-      </section>
-      <section class="min-w-0 flex flex-col min-h-0" data-chords-table="finals">
-        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Finals</h2>
-        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
-          <table class="w-full text-sm min-w-max">
-            <thead class="bg-gray-100 sticky top-0">
-              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
-            </thead>
-            <tbody id="chords-finals-tbody" class="bg-white"></tbody>
-          </table>
-        </div>
-      </section>
-      <section id="chords-briefs-section" class="min-w-0 flex flex-col min-h-0 hidden" data-chords-table="briefs">
-        <h2 class="text-sm font-semibold text-gray-700 mb-2 shrink-0">Briefs</h2>
-        <div class="overflow-y-auto overflow-x-auto border border-gray-200 rounded-lg flex-1 min-h-0">
-          <table class="w-full text-sm min-w-max">
-            <thead class="bg-gray-100 sticky top-0">
-              <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
-            </thead>
-            <tbody id="chords-briefs-tbody" class="bg-white"></tbody>
-          </table>
-        </div>
-      </section>
+    <nav class="flex gap-1 shrink-0 hidden" id="chords-subtabs" aria-label="Chords table tabs">
+      <button type="button" id="chords-tab-initials" class="chords-subtab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-gray-200 bg-white text-indigo-600" aria-current="page">Initials</button>
+      <button type="button" id="chords-tab-vowels" class="chords-subtab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-transparent bg-gray-100 text-gray-600 hover:text-gray-900" aria-current="false">Vowels</button>
+      <button type="button" id="chords-tab-finals" class="chords-subtab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-transparent bg-gray-100 text-gray-600 hover:text-gray-900" aria-current="false">Finals</button>
+      <button type="button" id="chords-tab-briefs" class="chords-subtab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-transparent bg-gray-100 text-gray-600 hover:text-gray-900 hidden" aria-current="false">Briefs</button>
+    </nav>
+    <div id="chords-tables" class="w-full flex-1 min-h-0 hidden flex flex-col">
+      <div id="chords-panel-initials" class="flex-1 min-h-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg">
+        <section class="min-w-0 flex flex-col min-h-0 flex-1 overflow-hidden" data-chords-table="initials">
+          <div class="overflow-y-auto overflow-x-auto flex-1 min-h-0 border-t-0">
+            <table class="w-full text-sm min-w-max">
+              <thead class="bg-gray-100 sticky top-0">
+                <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
+              </thead>
+              <tbody id="chords-initials-tbody" class="bg-white"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <div id="chords-panel-vowels" class="flex-1 min-h-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg hidden">
+        <section class="min-w-0 flex flex-col min-h-0 flex-1 overflow-hidden" data-chords-table="vowels">
+          <div class="overflow-y-auto overflow-x-auto flex-1 min-h-0">
+            <table class="w-full text-sm min-w-max">
+              <thead class="bg-gray-100 sticky top-0">
+                <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
+              </thead>
+              <tbody id="chords-vowels-tbody" class="bg-white"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <div id="chords-panel-finals" class="flex-1 min-h-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg hidden">
+        <section class="min-w-0 flex flex-col min-h-0 flex-1 overflow-hidden" data-chords-table="finals">
+          <div class="overflow-y-auto overflow-x-auto flex-1 min-h-0">
+            <table class="w-full text-sm min-w-max">
+              <thead class="bg-gray-100 sticky top-0">
+                <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
+              </thead>
+              <tbody id="chords-finals-tbody" class="bg-white"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+      <div id="chords-panel-briefs" class="flex-1 min-h-0 flex flex-col overflow-hidden border border-gray-200 rounded-lg hidden">
+        <section class="min-w-0 flex flex-col min-h-0 flex-1 overflow-hidden" data-chords-table="briefs">
+          <div class="overflow-y-auto overflow-x-auto flex-1 min-h-0">
+            <table class="w-full text-sm min-w-max">
+              <thead class="bg-gray-100 sticky top-0">
+                <tr><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th></tr>
+              </thead>
+              <tbody id="chords-briefs-tbody" class="bg-white"></tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </div>
   </main>
 
   <!-- CSV panel -->
   <main id="panel-csv" class="tab-panel hidden flex flex-col flex-1 min-h-0 w-full max-w-6xl px-4 pt-8 pb-8 max-h-[calc(100vh-5rem)]">
-    <div class="w-full shrink-0 flex flex-col gap-3 mb-3">
+    <div class="w-full shrink-0 flex flex-col gap-3">
       <div class="flex flex-wrap items-center gap-3">
         <label for="csv-wordlist" class="text-sm font-medium text-gray-700">Word list</label>
         <select
@@ -176,7 +197,7 @@
       </div>
       <p id="csv-status" class="text-sm text-gray-500"></p>
     </div>
-    <nav class="flex gap-1 shrink-0 mb-1" aria-label="CSV table tabs">
+    <nav class="flex gap-1 shrink-0" aria-label="CSV table tabs">
       <button type="button" id="csv-tab-words" class="csv-table-tab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-gray-200 bg-white text-indigo-600" aria-current="page">Words</button>
       <button type="button" id="csv-tab-chords" class="csv-table-tab px-3 py-1.5 text-sm font-medium rounded-t border border-b-0 border-transparent bg-gray-100 text-gray-600 hover:text-gray-900" aria-current="false">Chords</button>
     </nav>

@@ -920,14 +920,20 @@ csvWordsEl.addEventListener("input", () => {
 // Chords tab tables
 const chordsStatus = document.getElementById("chords-status")!;
 const chordsSearch = document.getElementById("chords-search")!;
+const chordsSubtabs = document.getElementById("chords-subtabs")!;
 const chordsSearchInput = document.getElementById("chords-search-input") as HTMLInputElement;
+const chordsColumnizeInput = document.getElementById("chords-columnize-input") as HTMLInputElement;
 const chordsTables = document.getElementById("chords-tables")!;
 const chordsInitialsTbody = document.getElementById("chords-initials-tbody")!;
 const chordsVowelsTbody = document.getElementById("chords-vowels-tbody")!;
 const chordsFinalsTbody = document.getElementById("chords-finals-tbody")!;
 
 const chordsBriefsTbody = document.getElementById("chords-briefs-tbody")!;
-const chordsBriefsSection = document.getElementById("chords-briefs-section")!;
+const chordsBriefsTab = document.getElementById("chords-tab-briefs")!;
+const chordsPanelInitials = document.getElementById("chords-panel-initials")!;
+const chordsPanelVowels = document.getElementById("chords-panel-vowels")!;
+const chordsPanelFinals = document.getElementById("chords-panel-finals")!;
+const chordsPanelBriefs = document.getElementById("chords-panel-briefs")!;
 
 type ChordsTableId = "initials" | "vowels" | "finals" | "briefs";
 const chordsTbodies: Record<ChordsTableId, HTMLElement> = {
@@ -944,15 +950,56 @@ let chordsTableData: Record<ChordsTableId, Record<string, string>> = {
   briefs: {},
 };
 
-let chordsSortState: Record<ChordsTableId, { col: 0 | 1; dir: 1 | -1 }> = {
+let chordsSortState: Record<ChordsTableId, { col: number; dir: 1 | -1 }> = {
   initials: { col: 1, dir: 1 },
   vowels: { col: 1, dir: 1 },
   finals: { col: 1, dir: 1 },
   briefs: { col: 1, dir: 1 },
 };
 
+let columnizeChar: Record<ChordsTableId, string> = {
+  initials: "",
+  vowels: "",
+  finals: "",
+  briefs: "",
+};
+
 let chordsSearchQuery = "";
 let chordsSearchBy: "stroke" | "outline" = "outline";
+let chordsActiveSubTab: ChordsTableId = "initials";
+
+const chordsSubTabButtons: Record<ChordsTableId, HTMLElement> = {
+  initials: document.getElementById("chords-tab-initials")!,
+  vowels: document.getElementById("chords-tab-vowels")!,
+  finals: document.getElementById("chords-tab-finals")!,
+  briefs: document.getElementById("chords-tab-briefs")!,
+};
+const chordsPanels: Record<ChordsTableId, HTMLElement> = {
+  initials: document.getElementById("chords-panel-initials")!,
+  vowels: document.getElementById("chords-panel-vowels")!,
+  finals: document.getElementById("chords-panel-finals")!,
+  briefs: document.getElementById("chords-panel-briefs")!,
+};
+
+function setChordsSubTab(active: ChordsTableId): void {
+  chordsActiveSubTab = active;
+  if (chordsColumnizeInput) chordsColumnizeInput.value = columnizeChar[active] ?? "";
+  (["initials", "vowels", "finals", "briefs"] as const).forEach((id) => {
+    const isActive = active === id;
+    const btn = chordsSubTabButtons[id];
+    const panel = chordsPanels[id];
+    if (!btn || !panel) return;
+    btn.classList.toggle("border-gray-200", isActive);
+    btn.classList.toggle("border-transparent", !isActive);
+    btn.classList.toggle("bg-white", isActive);
+    btn.classList.toggle("text-indigo-600", isActive);
+    btn.classList.toggle("bg-gray-100", !isActive);
+    btn.classList.toggle("text-gray-600", !isActive);
+    btn.setAttribute("aria-current", isActive ? "page" : "false");
+    panel.classList.toggle("hidden", !isActive);
+  });
+  renderChordsTable(active);
+}
 
 const CHORDS_COL_LABELS = ["Stroke", "Translation"] as const;
 const MAX_CHORD_TABLE_ROWS = 1000;
@@ -968,6 +1015,65 @@ function filterChordsData(data: Record<string, string>, query: string, by: "stro
       return (val ?? "").toLowerCase().includes(q);
     })
   );
+}
+
+const MAX_COLUMNIZE_CHARS = 6;
+
+/** Unique columnize characters in order, capped to avoid 2^n explosion. */
+function getColumnizeChars(str: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const ch of str) {
+    if (!seen.has(ch) && out.length < MAX_COLUMNIZE_CHARS) {
+      seen.add(ch);
+      out.push(ch);
+    }
+  }
+  return out;
+}
+
+/** Column label for combination index k (0 = none, else chars whose bits are set). */
+function columnizeLabel(k: number, chars: string[]): string {
+  if (k === 0) return "none";
+  return chars.filter((_, i) => (k >> i) & 1).join("");
+}
+
+/** Combination index for a stroke: which columnize chars are present (bits set). */
+function strokeComboIndex(stroke: string, chars: string[]): number {
+  let k = 0;
+  for (let i = 0; i < chars.length; i++) {
+    if (stroke.includes(chars[i]!)) k |= 1 << i;
+  }
+  return k;
+}
+
+/** Base stroke with all columnize chars removed. */
+function baseStroke(stroke: string, chars: string[]): string {
+  let base = stroke;
+  for (const ch of chars) {
+    base = base.replace(new RegExp(ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"), "");
+  }
+  return base;
+}
+
+/** Group by base stroke; each base has 2^n slots (one per combination). */
+function buildColumnizedRows(
+  data: Record<string, string>,
+  chars: string[]
+): (string | string)[][] {
+  const numCombos = 1 << chars.length;
+  const map = new Map<string, string[]>();
+  for (const [stroke, translation] of Object.entries(data)) {
+    const base = baseStroke(stroke, chars);
+    let row = map.get(base);
+    if (!row) {
+      row = [base, ...Array.from({ length: numCombos }, () => "")];
+      map.set(base, row);
+    }
+    const k = strokeComboIndex(stroke, chars);
+    row[k + 1] = translation;
+  }
+  return Array.from(map.values());
 }
 
 function fillChordTable(
@@ -1003,27 +1109,88 @@ function fillChordTable(
   }
 }
 
-function updateChordsSortIndicators(section: Element, col: 0 | 1, dir: 1 | -1): void {
+function fillChordTableColumnized(
+  tbody: HTMLElement,
+  rows: (string | string)[][],
+  numCols: number,
+  sortCol: number,
+  sortDir: 1 | -1,
+  maxRows = MAX_CHORD_TABLE_ROWS
+): void {
+  tbody.innerHTML = "";
+  const sorted = [...rows].sort((a, b) => {
+    const va = String(a[sortCol] ?? "");
+    const vb = String(b[sortCol] ?? "");
+    const c = va.localeCompare(vb, undefined, { sensitivity: "base", numeric: true });
+    return c * sortDir;
+  });
+  const total = sorted.length;
+  const toRender = total <= maxRows ? sorted : sorted.slice(0, maxRows);
+  const frag = document.createDocumentFragment();
+  for (const row of toRender) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 last:border-0";
+    const cells = row.map((val, i) => {
+      const css = i === 0 ? "font-mono text-gray-800" : "text-gray-700";
+      return `<td class="px-3 py-1.5 ${css}">${escapeHtml(String(val ?? ""))}</td>`;
+    });
+    tr.innerHTML = cells.join("");
+    frag.appendChild(tr);
+  }
+  tbody.appendChild(frag);
+  if (total > maxRows) {
+    const tr = document.createElement("tr");
+    tr.className = "border-b border-gray-100 bg-gray-50";
+    tr.innerHTML = `<td colspan="${numCols}" class="px-3 py-2 text-sm text-gray-500">Showing first ${maxRows.toLocaleString()} of ${total.toLocaleString()} entries. Narrow the search to see more.</td>`;
+    tbody.appendChild(tr);
+  }
+}
+
+function updateChordsSortIndicators(
+  section: Element,
+  col: number,
+  dir: 1 | -1,
+  labels?: string[]
+): void {
   const ths = section.querySelectorAll("thead th");
   const arrow = dir === 1 ? " ↑" : " ↓";
+  const names = labels ?? CHORDS_COL_LABELS;
   ths.forEach((th, i) => {
-    th.textContent = CHORDS_COL_LABELS[i] + (i === col ? arrow : "");
+    th.textContent = (names[i] ?? "") + (i === col ? arrow : "");
   });
 }
 
 function renderChordsTable(tableId: ChordsTableId): void {
   const data = filterChordsData(chordsTableData[tableId], chordsSearchQuery, chordsSearchBy);
   const { col, dir } = chordsSortState[tableId];
-  fillChordTable(chordsTbodies[tableId], data, col, dir);
   const section = chordsTables.querySelector(`[data-chords-table="${tableId}"]`);
-  if (section) updateChordsSortIndicators(section, col, dir);
+  const theadRow = section?.querySelector("thead tr");
+  const chars = getColumnizeChars(columnizeChar[tableId] ?? "");
+  const numCols = chars.length ? 1 + (1 << chars.length) : 2;
+  if (chars.length > 0 && theadRow) {
+    const rows = buildColumnizedRows(data, chars);
+    const stateCol = Math.max(0, Math.min(col, numCols - 1));
+    const thClass =
+      "chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200";
+    const labels = ["Stroke", ...Array.from({ length: 1 << chars.length }, (_, k) => columnizeLabel(k, chars))];
+    (theadRow as HTMLElement).innerHTML = labels
+      .map((label) => `<th class="${thClass}" scope="col">${escapeHtml(label)}</th>`)
+      .join("");
+    fillChordTableColumnized(chordsTbodies[tableId], rows, numCols, stateCol, dir, MAX_CHORD_TABLE_ROWS);
+    if (section) updateChordsSortIndicators(section, stateCol, dir, labels);
+  } else {
+    if (theadRow) {
+      (theadRow as HTMLElement).innerHTML =
+        '<th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th>';
+    }
+    const sortCol = (col > 1 ? 0 : col) as 0 | 1;
+    fillChordTable(chordsTbodies[tableId], data, sortCol, dir);
+    if (section) updateChordsSortIndicators(section, sortCol, dir);
+  }
 }
 
 function renderAllChordsTables(): void {
-  renderChordsTable("initials");
-  renderChordsTable("vowels");
-  renderChordsTable("finals");
-  if (!chordsBriefsSection.classList.contains("hidden")) renderChordsTable("briefs");
+  renderChordsTable(chordsActiveSubTab);
 }
 
 function handleChordsThClick(ev: Event): void {
@@ -1032,7 +1199,9 @@ function handleChordsThClick(ev: Event): void {
   const section = th.closest("section");
   const tableId = section?.getAttribute("data-chords-table") as ChordsTableId | null;
   if (!tableId || !chordsTbodies[tableId]) return;
-  const col = th.cellIndex as 0 | 1;
+  const chars = getColumnizeChars(columnizeChar[tableId] ?? "");
+  const numCols = chars.length ? 1 + (1 << chars.length) : 2;
+  const col = Math.min(th.cellIndex, numCols - 1);
   const state = chordsSortState[tableId];
   const newDir: 1 | -1 = state.col === col ? (state.dir === 1 ? -1 : 1) : 1;
   chordsSortState[tableId] = { col, dir: newDir };
@@ -1040,6 +1209,10 @@ function handleChordsThClick(ev: Event): void {
 }
 
 chordsTables.addEventListener("click", handleChordsThClick);
+
+(["initials", "vowels", "finals", "briefs"] as const).forEach((id) => {
+  chordsSubTabButtons[id]?.addEventListener("click", () => setChordsSubTab(id));
+});
 
 let chordsSearchDebounce: ReturnType<typeof setTimeout> | null = null;
 function scheduleChordsSearchUpdate(): void {
@@ -1071,11 +1244,24 @@ document.querySelectorAll<HTMLInputElement>('input[name="chords-search-by"]').fo
   });
 });
 
+chordsColumnizeInput.addEventListener("input", () => {
+  const raw = chordsColumnizeInput.value;
+  columnizeChar[chordsActiveSubTab] = raw;
+  renderAllChordsTables();
+});
+chordsColumnizeInput.addEventListener("change", () => {
+  const raw = chordsColumnizeInput.value.trim();
+  columnizeChar[chordsActiveSubTab] = raw;
+  chordsColumnizeInput.value = raw;
+  renderAllChordsTables();
+});
+
 async function loadAndRenderChords(): Promise<void> {
   const source = versionEl.value;
   chordsStatus.textContent = "Loading…";
   chordsStatus.classList.remove("hidden");
   chordsSearch.classList.add("hidden");
+  chordsSubtabs.classList.add("hidden");
   chordsTables.classList.add("hidden");
   try {
     let data: ChordData;
@@ -1100,17 +1286,19 @@ async function loadAndRenderChords(): Promise<void> {
       finals: data.finals ?? {},
       briefs: rawBriefs,
     };
-    chordsBriefsSection.classList.toggle("hidden", !hasBriefs);
-    chordsTables.classList.toggle("grid-cols-3", !hasBriefs);
-    chordsTables.classList.toggle("grid-cols-4", hasBriefs);
+    chordsBriefsTab.classList.toggle("hidden", !hasBriefs);
     chordsSearch.classList.remove("hidden");
+    chordsSubtabs.classList.remove("hidden");
     chordsTables.classList.remove("hidden");
+    if (!hasBriefs && chordsActiveSubTab === "briefs") setChordsSubTab("initials");
+    setChordsSubTab(chordsActiveSubTab);
     chordsStatus.classList.add("hidden");
     renderAllChordsTables();
   } catch (e) {
     chordsStatus.textContent = "Failed to load chord data.";
     chordsStatus.classList.remove("hidden");
     chordsSearch.classList.add("hidden");
+    chordsSubtabs.classList.add("hidden");
     chordsTables.classList.add("hidden");
   }
 }
