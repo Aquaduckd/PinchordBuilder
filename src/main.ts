@@ -277,9 +277,9 @@ const csvChordsTable = document.getElementById("csv-chords-table")!;
 const csvChordsTbody = document.getElementById("csv-chords-tbody")!;
 
 type CsvChordsRow = { key: string; output: string; type: string; count: number; pct: number; examples: string[] };
-const CSV_CHORDS_COL_LABELS = ["Key", "Output", "Type", "Pct", "Examples"] as const;
-type CsvChordsSortCol = 0 | 1 | 2 | 3 | 4;
-let csvChordsSortCol: CsvChordsSortCol = 3;
+const CSV_CHORDS_COL_LABELS = ["Index", "Key", "Output", "Type", "Pct", "Examples"] as const;
+type CsvChordsSortCol = 0 | 1 | 2 | 3 | 4 | 5;
+let csvChordsSortCol: CsvChordsSortCol = 4;
 let csvChordsSortDir: 1 | -1 = -1;
 let csvChordsTableData: CsvChordsRow[] = [];
 
@@ -378,7 +378,8 @@ function applyCsvChordsSort(col: CsvChordsSortCol): void {
 csvChordsTable.addEventListener("click", (ev: Event) => {
   const th = (ev.target as HTMLElement).closest("th");
   if (!th?.classList.contains("csv-chords-th")) return;
-  applyCsvChordsSort(th.cellIndex as CsvChordsSortCol);
+  const col = Math.min(5, th.cellIndex) as CsvChordsSortCol;
+  applyCsvChordsSort(col);
 });
 
 updateCsvSortIndicators();
@@ -398,15 +399,18 @@ function csvChordsSortCompare(a: CsvChordsRow, b: CsvChordsRow, col: CsvChordsSo
       c = (a.key || "").localeCompare(b.key || "", undefined, { sensitivity: "base", numeric: true });
       break;
     case 1:
-      c = (a.output || "").localeCompare(b.output || "", undefined, { sensitivity: "base", numeric: true });
+      c = (a.key || "").localeCompare(b.key || "", undefined, { sensitivity: "base", numeric: true });
       break;
     case 2:
-      c = (a.type || "").localeCompare(b.type || "", undefined, { sensitivity: "base", numeric: true });
+      c = (a.output || "").localeCompare(b.output || "", undefined, { sensitivity: "base", numeric: true });
       break;
     case 3:
-      c = a.pct - b.pct;
+      c = (a.type || "").localeCompare(b.type || "", undefined, { sensitivity: "base", numeric: true });
       break;
     case 4:
+      c = a.pct - b.pct;
+      break;
+    case 5:
       c = (a.examples.join(", ") || "").localeCompare(b.examples.join(", ") || "", undefined, { sensitivity: "base", numeric: true });
       break;
     default:
@@ -427,13 +431,13 @@ function renderCsvChordsTable(): void {
   const sorted = [...csvChordsTableData].sort((a, b) => csvChordsSortCompare(a, b, csvChordsSortCol, csvChordsSortDir));
   csvChordsTbody.innerHTML = "";
   const frag = document.createDocumentFragment();
-  for (const row of sorted) {
+  sorted.forEach((row, i) => {
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 last:border-0";
     const examplesStr = row.examples.slice(0, 5).join(", ");
-    tr.innerHTML = `<td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(row.key)}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(row.output)}</td><td class="px-3 py-1.5 text-gray-600">${escapeHtml(row.type)}</td><td class="px-3 py-1.5 text-gray-600">${row.pct.toFixed(1)}%</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(examplesStr)}</td>`;
+    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${i + 1}</td><td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(row.key)}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(row.output)}</td><td class="px-3 py-1.5 text-gray-600">${escapeHtml(row.type)}</td><td class="px-3 py-1.5 text-gray-600">${row.pct.toFixed(1)}%</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(examplesStr)}</td>`;
     frag.appendChild(tr);
-  }
+  });
   csvChordsTbody.appendChild(frag);
   updateCsvChordsSortIndicators();
 }
@@ -949,10 +953,10 @@ let chordsTableData: Record<ChordsTableId, Record<string, string>> = {
 };
 
 let chordsSortState: Record<ChordsTableId, { col: number; dir: 1 | -1 }> = {
-  initials: { col: 1, dir: 1 },
-  vowels: { col: 1, dir: 1 },
-  finals: { col: 1, dir: 1 },
-  briefs: { col: 1, dir: 1 },
+  initials: { col: 2, dir: 1 },
+  vowels: { col: 2, dir: 1 },
+  finals: { col: 2, dir: 1 },
+  briefs: { col: 2, dir: 1 },
 };
 
 let columnizeChar: Record<ChordsTableId, string> = {
@@ -999,7 +1003,7 @@ function setChordsSubTab(active: ChordsTableId): void {
   renderChordsTable(active);
 }
 
-const CHORDS_COL_LABELS = ["Stroke", "Translation"] as const;
+const CHORDS_COL_LABELS = ["Index", "Stroke", "Translation"] as const;
 const MAX_CHORD_TABLE_ROWS = 1000;
 const CHORDS_SEARCH_DEBOUNCE_MS = 150;
 
@@ -1077,32 +1081,33 @@ function buildColumnizedRows(
 function fillChordTable(
   tbody: HTMLElement,
   data: Record<string, string>,
-  sortCol: 0 | 1 = 0,
+  sortCol: 0 | 1 | 2 = 1,
   sortDir: 1 | -1 = 1,
   maxRows = MAX_CHORD_TABLE_ROWS
 ): void {
   tbody.innerHTML = "";
   const entries = Object.entries(data);
+  const dataCol = sortCol === 0 ? 1 : sortCol;
   entries.sort((a, b) => {
-    const va = a[sortCol];
-    const vb = b[sortCol];
+    const va = a[dataCol - 1];
+    const vb = b[dataCol - 1];
     const c = (va || "").localeCompare(vb || "", undefined, { sensitivity: "base", numeric: true });
     return c * sortDir;
   });
   const total = entries.length;
   const toRender = total <= maxRows ? entries : entries.slice(0, maxRows);
   const frag = document.createDocumentFragment();
-  for (const [stroke, outline] of toRender) {
+  toRender.forEach(([stroke, outline], i) => {
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 last:border-0";
-    tr.innerHTML = `<td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(stroke || "∅")}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(outline)}</td>`;
+    tr.innerHTML = `<td class="px-3 py-1.5 text-gray-600">${i + 1}</td><td class="px-3 py-1.5 font-mono text-gray-800">${escapeHtml(stroke || "∅")}</td><td class="px-3 py-1.5 text-gray-700">${escapeHtml(outline)}</td>`;
     frag.appendChild(tr);
-  }
+  });
   tbody.appendChild(frag);
   if (total > maxRows) {
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 bg-gray-50";
-    tr.innerHTML = `<td colspan="2" class="px-3 py-2 text-sm text-gray-500">Showing first ${maxRows.toLocaleString()} of ${total.toLocaleString()} entries. Narrow the search to see more.</td>`;
+    tr.innerHTML = `<td colspan="3" class="px-3 py-2 text-sm text-gray-500">Showing first ${maxRows.toLocaleString()} of ${total.toLocaleString()} entries. Narrow the search to see more.</td>`;
     tbody.appendChild(tr);
   }
 }
@@ -1116,25 +1121,27 @@ function fillChordTableColumnized(
   maxRows = MAX_CHORD_TABLE_ROWS
 ): void {
   tbody.innerHTML = "";
+  const dataCol = sortCol === 0 ? 0 : sortCol - 1;
   const sorted = [...rows].sort((a, b) => {
-    const va = String(a[sortCol] ?? "");
-    const vb = String(b[sortCol] ?? "");
+    const va = String(a[dataCol] ?? "");
+    const vb = String(b[dataCol] ?? "");
     const c = va.localeCompare(vb, undefined, { sensitivity: "base", numeric: true });
     return c * sortDir;
   });
   const total = sorted.length;
   const toRender = total <= maxRows ? sorted : sorted.slice(0, maxRows);
   const frag = document.createDocumentFragment();
-  for (const row of toRender) {
+  toRender.forEach((row, i) => {
     const tr = document.createElement("tr");
     tr.className = "border-b border-gray-100 last:border-0";
-    const cells = row.map((val, i) => {
-      const css = i === 0 ? "font-mono text-gray-800" : "text-gray-700";
+    const indexCell = `<td class="px-3 py-1.5 text-gray-600">${i + 1}</td>`;
+    const dataCells = row.map((val, j) => {
+      const css = j === 0 ? "font-mono text-gray-800" : "text-gray-700";
       return `<td class="px-3 py-1.5 ${css}">${escapeHtml(String(val ?? ""))}</td>`;
     });
-    tr.innerHTML = cells.join("");
+    tr.innerHTML = indexCell + dataCells.join("");
     frag.appendChild(tr);
-  }
+  });
   tbody.appendChild(frag);
   if (total > maxRows) {
     const tr = document.createElement("tr");
@@ -1164,13 +1171,13 @@ function renderChordsTable(tableId: ChordsTableId): void {
   const section = chordsTables.querySelector(`[data-chords-table="${tableId}"]`);
   const theadRow = section?.querySelector("thead tr");
   const chars = getColumnizeChars(columnizeChar[tableId] ?? "");
-  const numCols = chars.length ? 1 + (1 << chars.length) : 2;
+  const numCols = chars.length ? 2 + (1 << chars.length) : 3;
   if (chars.length > 0 && theadRow) {
     const rows = buildColumnizedRows(data, chars);
     const stateCol = Math.max(0, Math.min(col, numCols - 1));
     const thClass =
       "chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200";
-    const labels = ["Stroke", ...Array.from({ length: 1 << chars.length }, (_, k) => columnizeLabel(k, chars))];
+    const labels = ["Index", "Stroke", ...Array.from({ length: 1 << chars.length }, (_, k) => columnizeLabel(k, chars))];
     (theadRow as HTMLElement).innerHTML = labels
       .map((label) => `<th class="${thClass}" scope="col">${escapeHtml(label)}</th>`)
       .join("");
@@ -1179,9 +1186,9 @@ function renderChordsTable(tableId: ChordsTableId): void {
   } else {
     if (theadRow) {
       (theadRow as HTMLElement).innerHTML =
-        '<th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th>';
+        '<th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Index</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Stroke</th><th class="chords-th text-left px-3 py-2 border-b border-gray-200 font-medium cursor-pointer select-none hover:bg-gray-200" scope="col">Translation</th>';
     }
-    const sortCol = (col > 1 ? 0 : col) as 0 | 1;
+    const sortCol = Math.max(0, Math.min(col, 2)) as 0 | 1 | 2;
     fillChordTable(chordsTbodies[tableId], data, sortCol, dir);
     if (section) updateChordsSortIndicators(section, sortCol, dir);
   }
@@ -1198,7 +1205,7 @@ function handleChordsThClick(ev: Event): void {
   const tableId = section?.getAttribute("data-chords-table") as ChordsTableId | null;
   if (!tableId || !chordsTbodies[tableId]) return;
   const chars = getColumnizeChars(columnizeChar[tableId] ?? "");
-  const numCols = chars.length ? 1 + (1 << chars.length) : 2;
+  const numCols = chars.length ? 2 + (1 << chars.length) : 3;
   const col = Math.min(th.cellIndex, numCols - 1);
   const state = chordsSortState[tableId];
   const newDir: 1 | -1 = state.col === col ? (state.dir === 1 ? -1 : 1) : 1;
@@ -1344,29 +1351,31 @@ function saveChordsTabToCsv(): void {
   let filename: string;
   if (chars.length > 0) {
     const rows = buildColumnizedRows(data, chars);
-    const numCols = 1 + (1 << chars.length);
+    const numCols = 2 + (1 << chars.length);
     const stateCol = Math.max(0, Math.min(sortCol, numCols - 1));
+    const dataCol = stateCol === 0 ? 0 : stateCol - 1;
     const sorted = [...rows].sort((a, b) => {
-      const va = String(a[stateCol] ?? "");
-      const vb = String(b[stateCol] ?? "");
-      return va.localeCompare(vb, undefined, { sensitivity: "base", numeric: true }) * sortDir;
+      const va = String(a[dataCol] ?? "");
+      const vb = String(b[dataCol] ?? "");
+      const c = va.localeCompare(vb, undefined, { sensitivity: "base", numeric: true });
+      return c * sortDir;
     });
-    const labels = ["Stroke", ...Array.from({ length: 1 << chars.length }, (_, k) => columnizeLabel(k, chars))];
+    const labels = ["Index", "Stroke", ...Array.from({ length: 1 << chars.length }, (_, k) => columnizeLabel(k, chars))];
     const header = labels.map((l) => escapeCsv(l)).join(",") + "\n";
     const body = sorted
-      .map((row) => row.map((cell) => escapeCsv(String(cell ?? ""))).join(","))
+      .map((row, i) => [String(i + 1), ...row].map((cell) => escapeCsv(String(cell ?? ""))).join(","))
       .join("\n");
     csv = header + body;
     filename = `pinchord-chords-${tabLabel}-${version}-${timestamp}.csv`;
   } else {
-    const sortColClamped = sortCol > 1 ? 0 : sortCol;
+    const dataCol = sortCol === 0 ? 1 : sortCol;
     const entries = Object.entries(data).sort((a, b) => {
-      const va = a[sortColClamped] ?? "";
-      const vb = b[sortColClamped] ?? "";
+      const va = a[dataCol - 1] ?? "";
+      const vb = b[dataCol - 1] ?? "";
       return (va as string).localeCompare(vb as string, undefined, { sensitivity: "base", numeric: true }) * sortDir;
     });
-    const header = "Stroke,Translation\n";
-    const body = entries.map(([stroke, outline]) => `${escapeCsv(stroke)},${escapeCsv(outline)}`).join("\n");
+    const header = "Index,Stroke,Translation\n";
+    const body = entries.map(([stroke, outline], i) => `${i + 1},${escapeCsv(stroke)},${escapeCsv(outline)}`).join("\n");
     csv = header + body;
     filename = `pinchord-chords-${tabLabel}-${version}-${timestamp}.csv`;
   }
@@ -1386,10 +1395,10 @@ function saveCsvTabToCsv(): void {
   let filename: string;
   if (csvActiveTableTab === "chords") {
     const sorted = [...csvChordsTableData].sort((a, b) => csvChordsSortCompare(a, b, csvChordsSortCol, csvChordsSortDir));
-    const header = "Key,Output,Type,Pct,Examples\n";
-    const rows = sorted.map((r) => {
+    const header = "Index,Key,Output,Type,Pct,Examples\n";
+    const rows = sorted.map((r, i) => {
       const examplesStr = r.examples.slice(0, 5).join(", ");
-      return `${escapeCsv(r.key)},${escapeCsv(r.output)},${escapeCsv(r.type)},${r.pct.toFixed(1)},${escapeCsv(examplesStr)}`;
+      return `${i + 1},${escapeCsv(r.key)},${escapeCsv(r.output)},${escapeCsv(r.type)},${r.pct.toFixed(1)},${escapeCsv(examplesStr)}`;
     }).join("\n");
     csv = header + rows;
     filename = `pinchord-getchords-${version}-${timestamp}.csv`;
