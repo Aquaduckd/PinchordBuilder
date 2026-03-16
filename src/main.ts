@@ -25,7 +25,7 @@ const URL_PARAM_MAX = "max";
 const URL_PARAM_TAB = "tab";
 const URL_PARAM_SEARCH = "search";
 
-const DEFAULT_VERSION = "v26.0";
+const DEFAULT_VERSION = "pinechord-v2.0";
 const DEFAULT_MAX = "100";
 
 /** Chord JSON: initials, vowels, finals, prefixes, suffixes, briefs, banks, and keyOrder. */
