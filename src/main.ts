@@ -877,9 +877,15 @@ if (configDownloadOrthospellingBtn) {
           ? "Pinchord (custom)"
           : version.startsWith("pinechord-")
             ? `Pinechord ${version.slice(10)}`
-            : `Pinchord ${version}`;
+            : version.startsWith("minichord-")
+              ? `Minichord ${version.slice(10)}`
+              : `Pinchord ${version}`;
       const yaml = buildJavelinOrthospellingYaml(data, displayName);
-      const systemName = version.startsWith("pinechord-") ? "Pinechord" : "Pinchord";
+      const systemName = version.startsWith("pinechord-")
+        ? "Pinechord"
+        : version.startsWith("minichord-")
+          ? "Minichord"
+          : "Pinchord";
       const versionSuffix = version === "custom" ? "custom" : version;
       const filename = `${systemName.toLowerCase()}-javelin-dictionary-${versionSuffix}.yaml`;
       const blob = new Blob([yaml], { type: "application/x-yaml" });
@@ -922,9 +928,15 @@ if (configDownloadSystemBtn) {
           ? "Pinchord (custom)"
           : version.startsWith("pinechord-")
             ? `Pinechord ${version.slice(10)}`
-            : `Pinchord ${version}`;
+            : version.startsWith("minichord-")
+              ? `Minichord ${version.slice(10)}`
+              : `Pinchord ${version}`;
       const yaml = buildJavelinSystemYaml(data, baseYaml, displayName);
-      const systemName = version.startsWith("pinechord-") ? "Pinechord" : "Pinchord";
+      const systemName = version.startsWith("pinechord-")
+        ? "Pinechord"
+        : version.startsWith("minichord-")
+          ? "Minichord"
+          : "Pinchord";
       const versionSuffix = version === "custom" ? "custom" : version;
       const filename = `${systemName.toLowerCase()}-javelin-system-${versionSuffix}.yaml`;
       const blob = new Blob([yaml], { type: "application/x-yaml" });
@@ -992,6 +1004,7 @@ const headerSaveCsvBtn = document.getElementById("header-save-csv-btn")!;
 
 function chordFileName(version: string): string {
   if (version.startsWith("pinechord-")) return `pinechord-chords-${version.slice(10)}.json`;
+  if (version.startsWith("minichord-")) return `minichord-chords-${version.slice(10)}.json`;
   return `pinchord-chords-${version}.json`;
 }
 

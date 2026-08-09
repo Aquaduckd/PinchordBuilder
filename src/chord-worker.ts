@@ -209,7 +209,9 @@ async function startJob(
     if (!chordData) {
       const fileName = version.startsWith("pinechord-")
         ? `pinechord-chords-${version.slice(10)}.json`
-        : `pinchord-chords-${version}.json`;
+        : version.startsWith("minichord-")
+          ? `minichord-chords-${version.slice(10)}.json`
+          : `pinchord-chords-${version}.json`;
       const res = await fetch(`../chord-versions/${fileName}`);
       if (!res.ok) throw new Error(`Failed to load ${version}`);
       chordData = (await res.json()) as ChordData;
